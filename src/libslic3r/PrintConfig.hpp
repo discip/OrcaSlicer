@@ -1,20 +1,3 @@
-///|/ Copyright (c) Prusa Research 2016 - 2023 Vojtěch Bubník @bubnikv, Lukáš Matěna @lukasmatena, Lukáš Hejl @hejllukas, Tomáš Mészáros @tamasmeszaros, Pavel Mikuš @Godrak, David Kocík @kocikdav, Oleksandra Iushchenko @YuSanka, Vojtěch Král @vojtechkral, Enrico Turri @enricoturri1966
-///|/ Copyright (c) 2023 Pedro Lamas @PedroLamas
-///|/ Copyright (c) 2020 Sergey Kovalev @RandoMan70
-///|/ Copyright (c) 2021 Martin Budden
-///|/ Copyright (c) 2021 Ilya @xorza
-///|/ Copyright (c) 2020 Paul Arden @ardenpm
-///|/ Copyright (c) 2019 Spencer Owen @spuder
-///|/ Copyright (c) 2019 Stephan Reichhelm @stephanr
-///|/ Copyright (c) 2018 Martin Loidl @LoidlM
-///|/ Copyright (c) SuperSlicer 2018 Remi Durand @supermerill
-///|/ Copyright (c) 2016 - 2017 Joseph Lenox @lordofhyphens
-///|/ Copyright (c) Slic3r 2013 - 2015 Alessandro Ranellucci @alranel
-///|/ Copyright (c) 2015 Maksim Derbasov @ntfshard
-///|/ Copyright (c) 2015 Alexander Rössler @machinekoder
-///|/
-///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
-///|/
 // Configuration store of Slic3r.
 //
 // The configuration store is either static or dynamic.
@@ -871,6 +854,14 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,              initial_layer_jerk))
     ((ConfigOptionFloat,              travel_jerk))
     ((ConfigOptionBool,               precise_z_height))
+        
+    ((ConfigOptionBool, interlocking_beam))
+    ((ConfigOptionFloat,interlocking_beam_width))
+    ((ConfigOptionFloat,interlocking_orientation))
+    ((ConfigOptionInt,  interlocking_beam_layer_count))
+    ((ConfigOptionInt,  interlocking_depth))
+    ((ConfigOptionInt,  interlocking_boundary_avoidance))
+
 )
 
 // This object is mapped to Perl as Slic3r::Config::PrintRegion.
@@ -1040,6 +1031,12 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloats,              filament_flow_ratio))
     ((ConfigOptionBools,               enable_pressure_advance))
     ((ConfigOptionFloats,              pressure_advance))
+    // Orca: adaptive pressure advance and calibration model
+    ((ConfigOptionBools,                adaptive_pressure_advance))
+    ((ConfigOptionBools,                adaptive_pressure_advance_overhangs))
+    ((ConfigOptionStrings,             adaptive_pressure_advance_model))
+    ((ConfigOptionFloats,              adaptive_pressure_advance_bridges))
+    //
     ((ConfigOptionFloat,               fan_kickstart))
     ((ConfigOptionBool,                fan_speedup_overhangs))
     ((ConfigOptionFloat,               fan_speedup_time))
@@ -1077,6 +1074,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloats,              z_hop))
     // BBS
     ((ConfigOptionEnumsGeneric,        z_hop_types))
+    ((ConfigOptionFloats,              travel_slope))
     ((ConfigOptionFloats,              retract_lift_above))
     ((ConfigOptionFloats,              retract_lift_below))
     ((ConfigOptionEnumsGeneric,        retract_lift_enforce))
@@ -1121,15 +1119,13 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,               parking_pos_retraction))
     ((ConfigOptionFloat,               extra_loading_move))
     ((ConfigOptionFloat,               machine_load_filament_time))
+    ((ConfigOptionFloat,               machine_tool_change_time))
     ((ConfigOptionFloat,               machine_unload_filament_time))
     ((ConfigOptionFloats,              filament_loading_speed))
     ((ConfigOptionFloats,              filament_loading_speed_start))
-    ((ConfigOptionFloats,              filament_load_time))
     ((ConfigOptionFloats,              filament_unloading_speed))
     ((ConfigOptionFloats,              filament_unloading_speed_start))
     ((ConfigOptionFloats,              filament_toolchange_delay))
-    // Orca todo: consolidate with machine_load_filament_time
-    ((ConfigOptionFloats,              filament_unload_time))
     ((ConfigOptionInts,                filament_cooling_moves))
     ((ConfigOptionFloats,              filament_cooling_initial_speed))
     ((ConfigOptionFloats,              filament_minimal_purge_on_wipe_tower))
@@ -1138,6 +1134,8 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBools,               filament_multitool_ramming))
     ((ConfigOptionFloats,              filament_multitool_ramming_volume))
     ((ConfigOptionFloats,              filament_multitool_ramming_flow))
+    ((ConfigOptionFloats,              filament_stamping_loading_speed))
+    ((ConfigOptionFloats,              filament_stamping_distance))
     ((ConfigOptionBool,                purge_in_prime_tower))
     ((ConfigOptionBool,                enable_filament_ramming))
     ((ConfigOptionBool,                support_multi_bed_types))
@@ -1191,6 +1189,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionPoints,             extruder_offset))
     ((ConfigOptionBools,              reduce_fan_stop_start_freq))
+    ((ConfigOptionBools,              dont_slow_down_outer_wall))
     ((ConfigOptionFloats,             fan_cooling_layer_time))
     ((ConfigOptionStrings,            filament_colour))
     ((ConfigOptionBools,              activate_air_filtration))
@@ -1230,6 +1229,8 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionBool,               spiral_mode_smooth))
     ((ConfigOptionFloatOrPercent,     spiral_mode_max_xy_smoothing))
     ((ConfigOptionInt,                standby_temperature_delta))
+    ((ConfigOptionFloat,                preheat_time))
+    ((ConfigOptionInt,                preheat_steps))
     ((ConfigOptionInts,               nozzle_temperature))
     ((ConfigOptionBools,              wipe))
     // BBS
@@ -1245,15 +1246,18 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              wipe_tower_rotation_angle))
     ((ConfigOptionFloat,              prime_tower_brim_width))
     ((ConfigOptionFloat,              wipe_tower_bridging))
+    ((ConfigOptionPercent,            wipe_tower_extra_flow))
     ((ConfigOptionFloats,             flush_volumes_matrix))
     ((ConfigOptionFloats,             flush_volumes_vector))
 
     // Orca: mmu support
     ((ConfigOptionFloat,              wipe_tower_cone_angle))
     ((ConfigOptionPercent,            wipe_tower_extra_spacing))
-    ((ConfigOptionFloat,                wipe_tower_max_purge_speed))
-    ((ConfigOptionInt,                wipe_tower_extruder))
+    ((ConfigOptionFloat,              wipe_tower_max_purge_speed))
+    ((ConfigOptionInt,                wipe_tower_filament))
     ((ConfigOptionFloats,             wiping_volumes_extruders))
+    ((ConfigOptionInts,       idle_temperature))
+
 
     // BBS: wipe tower is only used for priming
     ((ConfigOptionFloat,              prime_volume))
@@ -1270,6 +1274,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionBool, independent_support_layer_height))
     // SoftFever
     ((ConfigOptionPercents,            filament_shrink))
+    ((ConfigOptionPercents,            filament_shrinkage_compensation_z))
     ((ConfigOptionBool,                gcode_label_objects))
     ((ConfigOptionBool,                exclude_object))
     ((ConfigOptionBool,                gcode_comments))
@@ -1652,6 +1657,9 @@ private:
     };
     static PrintAndCLIConfigDef s_def;
 };
+
+bool is_XL_printer(const DynamicPrintConfig &cfg);
+bool is_XL_printer(const PrintConfig &cfg);
 
 Points get_bed_shape(const DynamicPrintConfig &cfg);
 Points get_bed_shape(const PrintConfig &cfg);

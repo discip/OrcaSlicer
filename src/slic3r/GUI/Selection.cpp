@@ -1,7 +1,3 @@
-///|/ Copyright (c) Prusa Research 2019 - 2023 Enrico Turri @enricoturri1966, Oleksandra Iushchenko @YuSanka, Vojtěch Bubník @bubnikv, Tomáš Mészáros @tamasmeszaros, Lukáš Matěna @lukasmatena, Filip Sykala @Jony01
-///|/
-///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
-///|/
 #include "libslic3r/libslic3r.h"
 #include "Selection.hpp"
 
@@ -492,6 +488,12 @@ void Selection::center()
     this->move_to_center(distance);
     wxGetApp().plater()->get_view3D_canvas3D()->do_move(L("Move Object"));
     return;
+}
+
+void Selection::drop()
+{
+    this->move_to_center(Vec3d(0, 0, -this->get_bounding_box().min.z()));
+    wxGetApp().plater()->get_view3D_canvas3D()->do_move(L("Move Object"));
 }
 
 void Selection::center_plate(const int plate_idx) {

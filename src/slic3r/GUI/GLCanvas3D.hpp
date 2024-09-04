@@ -1,8 +1,3 @@
-///|/ Copyright (c) Prusa Research 2018 - 2023 Enrico Turri @enricoturri1966, Tomáš Mészáros @tamasmeszaros, Lukáš Matěna @lukasmatena, Oleksandra Iushchenko @YuSanka, Filip Sykala @Jony01, Vojtěch Bubník @bubnikv, Lukáš Hejl @hejllukas, David Kocík @kocikdav, Vojtěch Král @vojtechkral
-///|/ Copyright (c) BambuStudio 2023 manch1n @manch1n
-///|/
-///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
-///|/
 #ifndef slic3r_GLCanvas3D_hpp_
 #define slic3r_GLCanvas3D_hpp_
 
@@ -221,6 +216,9 @@ class GLCanvas3D
         };
 
         static const float THICKNESS_BAR_WIDTH;
+        
+        // Orca: Shrinkage compensation
+        void set_shrinkage_compensation(const Vec3d &shrinkage_compensation) { m_shrinkage_compensation = shrinkage_compensation; };
 
     private:
         bool                        m_enabled{ false };
@@ -234,6 +232,9 @@ class GLCanvas3D
         // Owned by LayersEditing.
         SlicingParameters* m_slicing_parameters{ nullptr };
         std::vector<double>         m_layer_height_profile;
+        
+        // Orca: Shrinkage compensation to apply when we need to use object_max_z with Z compensation.
+        Vec3d                       m_shrinkage_compensation{ Vec3d::Ones() };
 
         mutable float               m_adaptive_quality{ 0.5f };
         mutable HeightProfileSmoothingParams m_smooth_params;
@@ -879,20 +880,27 @@ public:
     // printable_only == false -> render also non printable volumes as grayed
     // parts_only == false -> render also sla support and pad
     void render_thumbnail(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params,
-        Camera::EType camera_type, bool use_top_view = false, bool for_picking = false);
+                                 Camera::EType           camera_type,
+                                 bool                    use_top_view = false,
+                                 bool                    for_picking  = false,
+                                 bool                    ban_light    = false);
     void render_thumbnail(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params,
-        const GLVolumeCollection& volumes, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false);
+                                 const GLVolumeCollection &volumes,
+                                 Camera::EType             camera_type,
+                                 bool                      use_top_view = false,
+                                 bool                      for_picking  = false,
+                                 bool                      ban_light    = false);
     static void render_thumbnail_internal(ThumbnailData& thumbnail_data, const ThumbnailsParams& thumbnail_params, PartPlateList& partplate_list, ModelObjectPtrs& model_objects,
         const GLVolumeCollection& volumes, std::vector<ColorRGBA>& extruder_colors,
-        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false);
+        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false);
     // render thumbnail using an off-screen framebuffer
     static void render_thumbnail_framebuffer(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params,
         PartPlateList& partplate_list, ModelObjectPtrs& model_objects, const GLVolumeCollection& volumes, std::vector<ColorRGBA>& extruder_colors,
-        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false);
+        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false);
     // render thumbnail using an off-screen framebuffer when GLEW_EXT_framebuffer_object is supported
     static void render_thumbnail_framebuffer_ext(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params,
         PartPlateList& partplate_list, ModelObjectPtrs& model_objects, const GLVolumeCollection& volumes, std::vector<ColorRGBA>& extruder_colors,
-        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false);
+        GLShaderProgram* shader, Camera::EType camera_type, bool use_top_view = false, bool for_picking = false, bool ban_light = false);
 
     //BBS use gcoder viewer render calibration thumbnails
     void render_calibration_thumbnail(ThumbnailData& thumbnail_data, unsigned int w, unsigned int h, const ThumbnailsParams& thumbnail_params);
@@ -976,6 +984,7 @@ public:
     void do_rotate(const std::string& snapshot_type);
     void do_scale(const std::string& snapshot_type);
     void do_center();
+    void do_drop();
     void do_center_plate(const int plate_idx);
     void do_mirror(const std::string& snapshot_type);
 

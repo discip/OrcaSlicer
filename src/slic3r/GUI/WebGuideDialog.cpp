@@ -57,7 +57,7 @@ static wxString update_custom_filaments()
         bool not_need_show = false;
         std::string filament_name;
         for (const Preset *preset : filament_id_to_presets.second) {
-            if (preset->is_system) {
+            if (preset->is_system || preset->is_project_embedded) {
                 not_need_show = true;
                 break;
             }
@@ -109,6 +109,7 @@ GuideFrame::GuideFrame(GUI_App *pGUI, long style)
     // INI
     m_SectionName = "firstguide";
     PrivacyUse    = false;
+    StealthMode   = false;
     InstallNetplugin = false;
 
     m_MainPtr = pGUI;
@@ -486,6 +487,15 @@ void GuideFrame::OnScriptMessage(wxWebViewEvent &evt)
             else
                 InstallNetplugin = false;
         }
+        else if (strCmd == "save_stealth_mode") {
+            wxString strAction = j["data"]["action"];
+
+            if (strAction == "yes") {
+                StealthMode = true;
+            } else {
+                StealthMode = false;
+            }
+        }
     } catch (std::exception &e) {
         // wxMessageBox(e.what(), "json Exception", MB_OK);
         BOOST_LOG_TRIVIAL(trace) << "GuideFrame::OnScriptMessage;Error:" << e.what();
@@ -616,6 +626,7 @@ int GuideFrame::SaveProfile()
     //     m_MainPtr->app_config->set(std::string(m_SectionName.mb_str()), "privacyuse", "0");
 
     m_MainPtr->app_config->set("region", m_Region);
+    m_MainPtr->app_config->set_bool("stealth_mode", StealthMode);
 
     //finish
     m_MainPtr->app_config->set(std::string(m_SectionName.mb_str()), "finish", "1");
@@ -847,7 +858,7 @@ bool GuideFrame::apply_config(AppConfig *app_config, PresetBundle *preset_bundle
 
         const std::map<std::string, std::set<std::string>>& model_maps = config->second;
         //for (const auto& vendor_profile : preset_bundle->vendors) {
-        for (const auto model_it: model_maps) {
+        for (const auto& model_it: model_maps) {
             if (model_it.second.size() > 0) {
                 variant = *model_it.second.begin();
                 const auto config_old = old_enabled_vendors.find(bundle_name);
@@ -897,7 +908,7 @@ bool GuideFrame::apply_config(AppConfig *app_config, PresetBundle *preset_bundle
     app_config->set_vendors(m_appconfig_new);
 
     if (check_unsaved_preset_changes)
-        preset_bundle->load_presets(*app_config, ForwardCompatibilitySubstitutionRule::EnableSilentDisableSystem,
+        preset_bundle->load_presets(*app_config, ForwardCompatibilitySubstitutionRule::Enable,
                                     {preferred_model, preferred_variant, first_added_filament, std::string()});
 
     // Update the selections from the compatibilty.
@@ -1223,6 +1234,9 @@ int GuideFrame::LoadProfile()
         m_ProfileJson["network_plugin_install"] = wxGetApp().app_config->get("app","installed_networking");
         m_ProfileJson["network_plugin_compability"] = wxGetApp().is_compatibility_version() ? "1" : "0";
         network_plugin_ready = wxGetApp().is_compatibility_version();
+
+        StealthMode = wxGetApp().app_config->get_bool("app","stealth_mode");
+        m_ProfileJson["stealth_mode"] = StealthMode;
     }
     catch (std::exception &e) {
         //wxLogMessage("GUIDE: load_profile_error  %s ", e.what());

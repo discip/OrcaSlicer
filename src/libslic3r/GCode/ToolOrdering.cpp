@@ -1,3 +1,4 @@
+#include "ExtrusionEntity.hpp"
 #include "Print.hpp"
 #include "ToolOrdering.hpp"
 #include "Layer.hpp"
@@ -25,14 +26,20 @@ const static bool g_wipe_into_objects = false;
 
 
 // Shortest hamilton path problem
-static std::vector<unsigned int> solve_extruder_order(const std::vector<std::vector<float>>& wipe_volumes, std::vector<unsigned int> all_extruders, unsigned int start_extruder_id) 
+static std::vector<unsigned int> solve_extruder_order(const std::vector<std::vector<float>>& wipe_volumes, std::vector<unsigned int> all_extruders, std::optional<unsigned int> start_extruder_id) 
 {
-    auto start_iter = std::find(all_extruders.begin(), all_extruders.end(), start_extruder_id);
     bool add_start_extruder_flag = false;
-    if (start_iter == all_extruders.end())
-        all_extruders.insert(all_extruders.begin(), start_extruder_id), add_start_extruder_flag = true;
-    else
-        std::swap(*all_extruders.begin(), *start_iter);
+
+    if (start_extruder_id) {
+        auto start_iter = std::find(all_extruders.begin(), all_extruders.end(), start_extruder_id);
+        if (start_iter == all_extruders.end())
+            all_extruders.insert(all_extruders.begin(), *start_extruder_id), add_start_extruder_flag = true;
+        else
+            std::swap(*all_extruders.begin(), *start_iter);
+    }
+    else {
+        *start_extruder_id = all_extruders.front();
+    }
 
     unsigned int iterations = (1 << all_extruders.size());
     unsigned int final_state = iterations - 1;
@@ -84,7 +91,7 @@ static std::vector<unsigned int> solve_extruder_order(const std::vector<std::vec
     return path;
 }
 
-std::vector<unsigned int> get_extruders_order(const std::vector<std::vector<float>> &wipe_volumes, std::vector<unsigned int> all_extruders, unsigned int start_extruder_id)
+std::vector<unsigned int> get_extruders_order(const std::vector<std::vector<float>> &wipe_volumes, std::vector<unsigned int> all_extruders, std::optional<unsigned int>start_extruder_id)
 {
 #define USE_DP_OPTIMIZE
 #ifdef USE_DP_OPTIMIZE
@@ -122,7 +129,6 @@ if (all_extruders.size() > 1) {
 
 #endif // OPTIMIZE
 }
-
 
 // Returns true in case that extruder a comes before b (b does not have to be present). False otherwise.
 bool LayerTools::is_extruder_order(unsigned int a, unsigned int b) const
@@ -166,12 +172,25 @@ unsigned int LayerTools::extruder(const ExtrusionEntityCollection &extrusions, c
 	assert(region.config().sparse_infill_filament.value > 0);
 	assert(region.config().solid_infill_filament.value > 0);
 	// 1 based extruder ID.
-	unsigned int extruder = ((this->extruder_override == 0) ?
-	    (is_infill(extrusions.role()) ?
-	    	(is_solid_infill(extrusions.entities.front()->role()) ? region.config().solid_infill_filament : region.config().sparse_infill_filament) :
-			region.config().wall_filament.value) :
-		this->extruder_override);
-	return (extruder == 0) ? 0 : extruder - 1;
+    unsigned int extruder = 1;
+
+    if (this->extruder_override == 0) {
+        if (extrusions.has_infill()) {
+            if (extrusions.has_solid_infill()) {
+                extruder = region.config().solid_infill_filament;
+            } else {
+                extruder = region.config().sparse_infill_filament;
+            }
+        } else if (extrusions.has_perimeters()) {
+            extruder = region.config().wall_filament.value;
+        } else {
+            extruder = this->extruder_override;
+        }
+    } else {
+        extruder = this->extruder_override;
+    }
+
+    return (extruder == 0) ? 0 : extruder - 1;
 }
 
 static double calc_max_layer_height(const PrintConfig &config, double max_object_layer_height)
@@ -214,10 +233,14 @@ ToolOrdering::ToolOrdering(const PrintObject &object, unsigned int first_extrude
 
     // BBS
     // Reorder the extruders to minimize tool switches.
-    if (first_extruder == (unsigned int)-1) {
-        this->reorder_extruders(generate_first_layer_tool_order(object));
+    std::vector<unsigned int> first_layer_tool_order;
+    if (first_extruder == (unsigned int) -1) {
+        first_layer_tool_order = generate_first_layer_tool_order(object);
     }
-    else {
+
+    if (!first_layer_tool_order.empty()) {
+        this->reorder_extruders(first_layer_tool_order);
+    } else {
         this->reorder_extruders(first_extruder);
     }
 
@@ -837,11 +860,13 @@ void ToolOrdering::reorder_extruders_for_minimum_flush_volume()
         for (unsigned int i = 0; i < number_of_extruders; ++i)
             wipe_volumes.push_back(std::vector<float>(number_of_extruders, print_config->prime_volume));
     }
-    
-    auto extruders_to_hash_key = [](const std::vector<unsigned int>& extruders, unsigned int initial_extruder_id)->uint32_t {
+
+    auto extruders_to_hash_key = [](const std::vector<unsigned int>& extruders,
+                                    std::optional<unsigned int>      initial_extruder_id) -> uint32_t {
         uint32_t hash_key = 0;
         // high 16 bit define initial extruder ,low 16 bit define extruder set
-        hash_key |= (1 << (16 + initial_extruder_id));
+        if (initial_extruder_id)
+            hash_key |= (1 << (16 + *initial_extruder_id));
         for (auto item : extruders)
             hash_key |= (1 << item);
         return hash_key;
@@ -868,7 +893,7 @@ void ToolOrdering::reorder_extruders_for_minimum_flush_volume()
         return false;
     };
 
-    unsigned int current_extruder_id = -1;
+    std::optional<unsigned int>current_extruder_id(-1);
     for (int i = 0; i < m_layer_tools.size(); ++i) {
         LayerTools& lt = m_layer_tools[i];
         if (lt.extruders.empty())

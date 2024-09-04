@@ -114,7 +114,7 @@ wxString PrintJob::get_http_error_msg(unsigned int status, std::string body)
             return _L("Service Unavailable");
         }
         else {
-            wxString unkown_text = _L("Unkown Error.");
+            wxString unkown_text = _L("Unknown Error.");
             unkown_text += wxString::Format("status=%u, body=%s", status, body);
             BOOST_LOG_TRIVIAL(error) << "http_error: status=" << status << ", code=" << code << ", error=" << error;
             return unkown_text;
@@ -150,7 +150,6 @@ void PrintJob::process(Ctl &ctl)
     ctl.call_on_main_thread([this] { prepare(); }).wait();
 
     int result = -1;
-    unsigned int http_code;
     std::string http_body;
 
     int total_plate_num = plate_data.plate_count;
@@ -312,7 +311,7 @@ void PrintJob::process(Ctl &ctl)
             try {
                 stl_design_id = std::stoi(wxGetApp().model().stl_design_id);
             }
-            catch (const std::exception& e) {
+            catch (const std::exception&) {
                 stl_design_id = 0;
             }
             params.stl_design_id = stl_design_id;
@@ -497,7 +496,12 @@ void PrintJob::process(Ctl &ctl)
 
 
         //use ftp only
-        if (!wxGetApp().app_config->get("lan_mode_only").empty() && wxGetApp().app_config->get("lan_mode_only") == "1") {
+        if (m_print_type == "from_sdcard_view") {
+            BOOST_LOG_TRIVIAL(info) << "print_job: try to send with cloud, model is sdcard view";
+            ctl.update_status(curr_percent, _u8L("Sending print job through cloud service"));
+            result = m_agent->start_sdcard_print(params, update_fn, cancel_fn);
+        }
+        else if (!wxGetApp().app_config->get("lan_mode_only").empty() && wxGetApp().app_config->get("lan_mode_only") == "1") {
 
             if (params.password.empty() || params.dev_ip.empty()) {
                 error_text = wxString::Format("Access code:%s Ip address:%s", params.password, params.dev_ip);

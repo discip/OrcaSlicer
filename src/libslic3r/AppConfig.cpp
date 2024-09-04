@@ -1,7 +1,3 @@
-///|/ Copyright (c) Prusa Research 2017 - 2023 Oleksandra Iushchenko @YuSanka, Vojtěch Bubník @bubnikv, Pavel Mikuš @Godrak, David Kocík @kocikdav, Lukáš Matěna @lukasmatena, Enrico Turri @enricoturri1966, Lukáš Hejl @hejllukas, Filip Sykala @Jony01, Vojtěch Král @vojtechkral
-///|/
-///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
-///|/
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Utils.hpp"
 #include "AppConfig.hpp"
@@ -85,6 +81,15 @@ std::string AppConfig::get_hms_host()
 // #else
     return "e.bambulab.com";
 // #endif
+}
+
+bool AppConfig::get_stealth_mode()
+{
+    // always return true when user did not finish setup wizard yet
+    if (!get_bool("firstguide","finish")) {
+        return true;
+    }
+    return get_bool("stealth_mode");
 }
 
 void AppConfig::reset()
@@ -195,6 +200,8 @@ void AppConfig::set_defaults()
     if (get("show_3d_navigator").empty())
         set_bool("show_3d_navigator", true);
 
+    if (get("show_outline").empty())
+        set_bool("show_outline", false);
 
 #ifdef _WIN32
 
@@ -255,6 +262,10 @@ void AppConfig::set_defaults()
     // Orca
     if(get("show_splash_screen").empty()) {
         set_bool("show_splash_screen", true);
+    }
+
+    if(get("auto_arrange").empty()) {
+        set_bool("auto_arrange", true);
     }
 
     if (get("show_model_mesh").empty()) {

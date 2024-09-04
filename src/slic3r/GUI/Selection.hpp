@@ -1,7 +1,3 @@
-///|/ Copyright (c) Prusa Research 2019 - 2023 Enrico Turri @enricoturri1966, Oleksandra Iushchenko @YuSanka, Filip Sykala @Jony01, Lukáš Matěna @lukasmatena, Vojtěch Bubník @bubnikv
-///|/
-///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
-///|/
 #ifndef slic3r_GUI_Selection_hpp_
 #define slic3r_GUI_Selection_hpp_
 
@@ -234,6 +230,7 @@ public:
     void remove_curr_plate();
     void clone(int numbers = 1);
     void center();
+    void drop();
     void center_plate(const int plate_idx);
     void set_printable(bool printable);
 

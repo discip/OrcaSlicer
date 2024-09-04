@@ -1,7 +1,3 @@
-///|/ Copyright (c) Prusa Research 2021 - 2023 Enrico Turri @enricoturri1966, Lukáš Matěna @lukasmatena, Oleksandra Iushchenko @YuSanka, Pavel Mikuš @Godrak, Tomáš Mészáros @tamasmeszaros, Filip Sykala @Jony01, Vojtěch Bubník @bubnikv
-///|/
-///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
-///|/
 #include "libslic3r/Config.hpp"
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/PresetBundle.hpp"
@@ -267,7 +263,7 @@ std::map<std::string, std::string> SettingsFactory::CATEGORY_ICON =
     { L("Extruders")            , "blank_14"    },
     { L("Extrusion Width")      , "blank_14"    },
     { L("Wipe options")         , "blank_14"    },
-    { L("Bed adhension")        , "blank_14"    },
+    { L("Bed adhesion")         , "blank_14"    },
 //  { L("Speed > Acceleration") , "time"        },
     { L("Advanced")             , "blank_14"    },
     // BBS: remove SLA categories
@@ -1318,6 +1314,8 @@ void MenuFactory::create_extra_object_menu()
     append_menu_item_merge_parts_to_single_part(&m_object_menu);
     // Object Center
     append_menu_item_center(&m_object_menu);
+    // Object Drop
+    append_menu_item_drop(&m_object_menu);
     // Object Split
     wxMenu* split_menu = new wxMenu();
     if (!split_menu)
@@ -1440,15 +1438,16 @@ void MenuFactory::create_bbl_part_menu()
     append_menu_item_fix_through_netfabb(menu);
     append_menu_item_simplify(menu);
     append_menu_item_center(menu);
+    append_menu_item_drop(menu);
     append_menu_items_mirror(menu);
     wxMenu* split_menu = new wxMenu();
     if (!split_menu)
         return;
 
-    append_menu_item(split_menu, wxID_ANY, _L("To objects"), _L("Split the selected object into mutiple objects"),
+    append_menu_item(split_menu, wxID_ANY, _L("To objects"), _L("Split the selected object into multiple objects"),
         [](wxCommandEvent&) { plater()->split_object(); }, "menu_split_objects", menu,
         []() { return plater()->can_split(true); }, m_parent);
-    append_menu_item(split_menu, wxID_ANY, _L("To parts"), _L("Split the selected object into mutiple parts"),
+    append_menu_item(split_menu, wxID_ANY, _L("To parts"), _L("Split the selected object into multiple parts"),
         [](wxCommandEvent&) { plater()->split_volume(); }, "menu_split_parts", menu,
         []() { return plater()->can_split(false); }, m_parent);
 
@@ -1685,6 +1684,7 @@ wxMenu* MenuFactory::multi_selection_menu()
             index++;
         }
         append_menu_item_center(menu);
+        append_menu_item_drop(menu);
         append_menu_item_fix_through_netfabb(menu);
         //append_menu_item_simplify(menu);
         append_menu_item_delete(menu);
@@ -1701,6 +1701,7 @@ wxMenu* MenuFactory::multi_selection_menu()
     }
     else {
         append_menu_item_center(menu);
+        append_menu_item_drop(menu);
         append_menu_item_fix_through_netfabb(menu);
         //append_menu_item_simplify(menu);
         append_menu_item_delete(menu);
@@ -1826,6 +1827,21 @@ void MenuFactory::append_menu_item_center(wxMenu* menu)
                 Vec3d center_pos = plate->get_center_origin();
                 return !( (model_pos.x() == center_pos.x()) && (model_pos.y() == center_pos.y()) );
             } //disable if model is at center / not in View3D
+        }, m_parent);
+}
+
+void MenuFactory::append_menu_item_drop(wxMenu* menu)
+{
+     append_menu_item(menu, wxID_ANY, _L("Drop") , "",
+        [this](wxCommandEvent&) {
+            plater()->drop_selection();
+        }, "", nullptr,
+        []() {
+            if (plater()->canvas3D()->get_canvas_type() != GLCanvas3D::ECanvasType::CanvasView3D)
+                return false;
+            else {
+                return (plater()->get_view3D_canvas3D()->get_selection().get_bounding_box().min.z() != 0);
+            } //disable if model is on the bed / not in View3D
         }, m_parent);
 }
 
@@ -1961,7 +1977,6 @@ void MenuFactory::append_menu_item_set_printable(wxMenu* menu)
 
     for (wxDataViewItem item : sels) {
         ItemType type = list->GetModel()->GetItemType(item);
-        bool check;
         if (type != itInstance && type != itObject)
             continue;
         else {

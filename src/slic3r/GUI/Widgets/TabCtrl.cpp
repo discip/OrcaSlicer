@@ -106,10 +106,6 @@ int TabCtrl::AppendItem(const wxString &item,
     btn->SetBackgroundColor(StateColor());
     btn->SetCornerRadius(0);
     btn->SetPaddingSize({TAB_BUTTON_PADDING});
-    wxClientDC dc(this); // ORCA calculate tab width from bold font to prevent tab movements on tab change
-    dc.SetFont(this->bold);
-    btn->SetMinSize(wxSize(dc.GetTextExtent(item).x + TAB_BUTTON_PADDING_X * 2, btn->GetSize().GetHeight()));
-    dc.Clear();
     btns.push_back(btn);
     if (btns.size() > 1)
         sizer->GetItem(sizer->GetItemCount() - 1)->SetMinSize({0, 0});
@@ -121,7 +117,31 @@ int TabCtrl::AppendItem(const wxString &item,
 
 bool TabCtrl::DeleteItem(int item)
 {
-    return false;
+    if (item < 0 || item >= btns.size()) {
+        return false;
+    }
+    const bool selection_changed = sel >= item;
+
+    if (selection_changed) {
+        sendTabCtrlEvent(true);
+    }
+
+    Button* btn = btns[item];
+    btn->Destroy();
+    btns.erase(btns.begin() + item);
+    sizer->Remove(item * 2);
+    if (btns.size() > 1)
+        sizer->GetItem(sizer->GetItemCount() - 1)->SetMinSize({0, 0});
+
+    if (selection_changed) {
+        sel--;  // `relayout()` uses `sel` so we need to update this before calling `relayout()`
+    }
+    relayout();
+    if (selection_changed) {
+        sendTabCtrlEvent();
+    }
+
+    return true;
 }
 
 void TabCtrl::DeleteAllItems()
@@ -308,7 +328,7 @@ void TabCtrl::doRender(wxDC& dc)
 #else
     dc.SetPen(wxPen(border_color.colorForStates(states), border_width));
     dc.DrawLine(0, size.y - BS2, size.x, size.y - BS2);
-    wxColour c = wxColour("#009688"); // ORCA: Controls under line color on selected tab
+    wxColour c("#009688"); // ORCA selected tab underline stroke color
     dc.SetPen(wxPen(c, 1));
     dc.SetBrush(c);
     dc.DrawRoundedRectangle(x1 - radius, size.y - BS2 - border_width * 3, x2 + radius * 2 - x1, border_width * 3, radius);

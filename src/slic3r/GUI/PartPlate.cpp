@@ -287,7 +287,7 @@ PrintSequence PartPlate::get_real_print_seq(bool* plate_same_as_global) const
     if (curr_plate_seq == PrintSequence::ByDefault) {
 		curr_plate_seq = global_print_seq;
     }
-	
+
 	if(plate_same_as_global)
 		*plate_same_as_global = (curr_plate_seq == global_print_seq);
 
@@ -470,7 +470,7 @@ void PartPlate::calc_gridlines(const ExPolygon& poly, const BoundingBox& pp_bbox
 	int count = 0;
 	int step  = 10;
 	// Orca: use 500 x 500 bed size as baseline.
-    auto      grid_counts = pp_bbox.size() / ((coord_t) scale_(step * 50));
+    const Point grid_counts = pp_bbox.size() / ((coord_t) scale_(step * 50));
     // if the grid is too dense, we increase the step
     if (grid_counts.minCoeff() > 1) {
         step = static_cast<int>(grid_counts.minCoeff() + 1) * 10;
@@ -1359,6 +1359,9 @@ std::vector<int> PartPlate::get_extruders(bool conside_custom_gcode) const
 	const DynamicPrintConfig& glb_config = wxGetApp().preset_bundle->prints.get_edited_preset().config;
 	int glb_support_intf_extr = glb_config.opt_int("support_interface_filament");
 	int glb_support_extr = glb_config.opt_int("support_filament");
+	int glb_wall_extr = glb_config.opt_int("wall_filament");
+	int glb_sparse_infill_extr = glb_config.opt_int("sparse_infill_filament");
+	int glb_solid_infill_extr = glb_config.opt_int("solid_infill_filament");
 	bool glb_support = glb_config.opt_bool("enable_support");
     glb_support |= glb_config.opt_int("raft_layers") > 0;
 
@@ -1392,26 +1395,53 @@ std::vector<int> PartPlate::get_extruders(bool conside_custom_gcode) const
 		else
 			obj_support = glb_support;
 
-		if (!obj_support)
-			continue;
+        if (obj_support) {
+            int                 obj_support_intf_extr = 0;
+            const ConfigOption* support_intf_extr_opt = mo->config.option("support_interface_filament");
+            if (support_intf_extr_opt != nullptr)
+                obj_support_intf_extr = support_intf_extr_opt->getInt();
+            if (obj_support_intf_extr != 0)
+                plate_extruders.push_back(obj_support_intf_extr);
+            else if (glb_support_intf_extr != 0)
+                plate_extruders.push_back(glb_support_intf_extr);
 
-		int obj_support_intf_extr = 0;
-		const ConfigOption* support_intf_extr_opt = mo->config.option("support_interface_filament");
-		if (support_intf_extr_opt != nullptr)
-			obj_support_intf_extr = support_intf_extr_opt->getInt();
-		if (obj_support_intf_extr != 0)
-			plate_extruders.push_back(obj_support_intf_extr);
-		else if (glb_support_intf_extr != 0)
-			plate_extruders.push_back(glb_support_intf_extr);
+            int                 obj_support_extr = 0;
+            const ConfigOption* support_extr_opt = mo->config.option("support_filament");
+            if (support_extr_opt != nullptr)
+                obj_support_extr = support_extr_opt->getInt();
+            if (obj_support_extr != 0)
+                plate_extruders.push_back(obj_support_extr);
+            else if (glb_support_extr != 0)
+                plate_extruders.push_back(glb_support_extr);
+        }
 
-		int obj_support_extr = 0;
-		const ConfigOption* support_extr_opt = mo->config.option("support_filament");
-		if (support_extr_opt != nullptr)
-			obj_support_extr = support_extr_opt->getInt();
-		if (obj_support_extr != 0)
-			plate_extruders.push_back(obj_support_extr);
-		else if (glb_support_extr != 0)
-			plate_extruders.push_back(glb_support_extr);
+        int obj_wall_extr = 1;
+		const ConfigOption* wall_opt = mo->config.option("wall_filament");
+		if (wall_opt != nullptr)
+			obj_wall_extr = wall_opt->getInt();
+		if (obj_wall_extr != 1)
+			plate_extruders.push_back(obj_wall_extr);
+		else if (glb_wall_extr != 1)
+			plate_extruders.push_back(glb_wall_extr);
+
+		int obj_sparse_infill_extr = 1;
+		const ConfigOption* sparse_infill_opt = mo->config.option("sparse_infill_filament");
+		if (sparse_infill_opt != nullptr)
+			obj_sparse_infill_extr = sparse_infill_opt->getInt();
+		if (obj_sparse_infill_extr != 1)
+			plate_extruders.push_back(obj_sparse_infill_extr);
+		else if (glb_sparse_infill_extr != 1)
+			plate_extruders.push_back(glb_sparse_infill_extr);
+
+		int obj_solid_infill_extr = 1;
+		const ConfigOption* solid_infill_opt = mo->config.option("solid_infill_filament");
+		if (solid_infill_opt != nullptr)
+			obj_solid_infill_extr = solid_infill_opt->getInt();
+		if (obj_solid_infill_extr != 1)
+			plate_extruders.push_back(obj_solid_infill_extr);
+		else if (glb_solid_infill_extr != 1)
+			plate_extruders.push_back(glb_solid_infill_extr);
+
 	}
 
 	if (conside_custom_gcode) {
@@ -1441,6 +1471,10 @@ std::vector<int> PartPlate::get_extruders_under_cli(bool conside_custom_gcode, D
     // if 3mf file
     int glb_support_intf_extr = full_config.opt_int("support_interface_filament");
     int glb_support_extr = full_config.opt_int("support_filament");
+	int glb_wall_extr = full_config.opt_int("wall_filament");
+	int glb_sparse_infill_extr = full_config.opt_int("sparse_infill_filament");
+	int glb_solid_infill_extr = full_config.opt_int("solid_infill_filament");
+
     bool glb_support = full_config.opt_bool("enable_support");
     glb_support |= full_config.opt_int("raft_layers") > 0;
 
@@ -1502,6 +1536,33 @@ std::vector<int> PartPlate::get_extruders_under_cli(bool conside_custom_gcode, D
                 plate_extruders.push_back(obj_support_extr);
             else if (glb_support_extr != 0)
                 plate_extruders.push_back(glb_support_extr);
+
+			int obj_wall_extr = 1;
+			const ConfigOption* wall_opt = object->config.option("wall_filament");
+			if (wall_opt != nullptr)
+				obj_wall_extr = wall_opt->getInt();
+			if (obj_wall_extr != 1)
+				plate_extruders.push_back(obj_wall_extr);
+			else if (glb_wall_extr != 1)
+				plate_extruders.push_back(glb_wall_extr);
+
+			int obj_sparse_infill_extr = 1;
+			const ConfigOption* sparse_infill_opt = object->config.option("sparse_infill_filament");
+			if (sparse_infill_opt != nullptr)
+				obj_sparse_infill_extr = sparse_infill_opt->getInt();
+			if (obj_sparse_infill_extr != 1)
+				plate_extruders.push_back(obj_sparse_infill_extr);
+			else if (glb_sparse_infill_extr != 1)
+				plate_extruders.push_back(glb_sparse_infill_extr);
+
+			int obj_solid_infill_extr = 1;
+			const ConfigOption* solid_infill_opt = object->config.option("solid_infill_filament");
+			if (solid_infill_opt != nullptr)
+				obj_solid_infill_extr = solid_infill_opt->getInt();
+			if (obj_solid_infill_extr != 1)
+				plate_extruders.push_back(obj_solid_infill_extr);
+			else if (glb_solid_infill_extr != 1)
+				plate_extruders.push_back(glb_solid_infill_extr);
         }
     }
 
@@ -1674,10 +1735,11 @@ arrangement::ArrangePolygon PartPlate::estimate_wipe_tower_polygon(const Dynamic
 	float w = dynamic_cast<const ConfigOptionFloat*>(config.option("prime_tower_width"))->value;
 	//float a = dynamic_cast<const ConfigOptionFloat*>(config.option("wipe_tower_rotation_angle"))->value;
 	float v = dynamic_cast<const ConfigOptionFloat*>(config.option("prime_volume"))->value;
-	Vec3d wipe_tower_size = estimate_wipe_tower_size(config, w, v, plate_extruder_size, use_global_objects);
+    float tower_brim_width = dynamic_cast<const ConfigOptionFloat*>(config.option("prime_tower_brim_width"))->value;
+    Vec3d wipe_tower_size = estimate_wipe_tower_size(config, w, v, plate_extruder_size, use_global_objects);
 	int plate_width=m_width, plate_depth=m_depth;
 	float depth = wipe_tower_size(1);
-	float margin = WIPE_TOWER_MARGIN, wp_brim_width = 0.f;
+	float margin = WIPE_TOWER_MARGIN + tower_brim_width, wp_brim_width = 0.f;
 	const ConfigOption* wipe_tower_brim_width_opt = config.option("prime_tower_brim_width");
 	if (wipe_tower_brim_width_opt) {
 		wp_brim_width = wipe_tower_brim_width_opt->getFloat();
@@ -2145,6 +2207,27 @@ int PartPlate::remove_instance(int obj_id, int instance_id)
 	return result;
 }
 
+BoundingBoxf3 PartPlate::get_objects_bounding_box()
+{
+    BoundingBoxf3 bbox;
+    for (std::set<std::pair<int, int>>::iterator it = obj_to_instance_set.begin(); it != obj_to_instance_set.end(); ++it)
+    {
+        int obj_id = it->first;
+        int instance_id = it->second;
+
+        if ((obj_id >= 0) && (obj_id < m_model->objects.size()))
+        {
+            ModelObject* object = m_model->objects[obj_id];
+            if ((instance_id >= 0) && (instance_id < object->instances.size()))
+            {
+                BoundingBoxf3 instance_bbox = object->instance_bounding_box(instance_id);
+                bbox.merge(instance_bbox);
+            }
+        }
+    }
+    return bbox;
+}
+
 //translate instance on the plate
 void PartPlate::translate_all_instance(Vec3d position)
 {
@@ -2439,7 +2522,7 @@ void PartPlate::generate_print_polygon(ExPolygon &print_polygon)
 {
 	auto compute_points = [&print_polygon](Vec2d& center, double radius, double start_angle, double stop_angle, int count)
 	{
-		double angle, angle_steps;
+		double angle_steps;
 		angle_steps = (stop_angle - start_angle) / (count - 1);
 		for(int j = 0; j < count; j++ )
 		{
@@ -2458,7 +2541,7 @@ void PartPlate::generate_print_polygon(ExPolygon &print_polygon)
 			{
 				const Vec2d& p = m_shape[i];
 				Vec2d center;
-				double start_angle, stop_angle, angle_steps, radius_x, radius_y, radius;
+				double start_angle, stop_angle, radius_x, radius_y, radius;
 				switch (i) {
 					case 0:
 						radius = 5.f;
@@ -2509,7 +2592,7 @@ void PartPlate::generate_exclude_polygon(ExPolygon &exclude_polygon)
 {
 	auto compute_exclude_points = [&exclude_polygon](Vec2d& center, double radius, double start_angle, double stop_angle, int count)
 	{
-		double angle, angle_steps;
+		double angle_steps;
 		angle_steps = (stop_angle - start_angle) / (count - 1);
 		for(int j = 0; j < count; j++ )
 		{
@@ -2528,7 +2611,7 @@ void PartPlate::generate_exclude_polygon(ExPolygon &exclude_polygon)
 			{
 				const Vec2d& p = m_exclude_area[i];
 				Vec2d center;
-				double start_angle, stop_angle, angle_steps, radius_x, radius_y, radius;
+				double start_angle, stop_angle, radius;
 				switch (i) {
 					case 0:
 						radius = 5.f;
@@ -4083,6 +4166,7 @@ int PartPlateList::notify_instance_update(int obj_id, int instance_id, bool is_n
 		PartPlate* plate = m_plate_list[obj_id - 1000];
 		plate->update_slice_result_valid_state( false );
 		plate->thumbnail_data.reset();
+        plate->no_light_thumbnail_data.reset();
 		plate->top_thumbnail_data.reset();
 		plate->pick_thumbnail_data.reset();
 
@@ -4113,12 +4197,14 @@ int PartPlateList::notify_instance_update(int obj_id, int instance_id, bool is_n
 			plate->update_states();
 			plate->update_slice_result_valid_state();
 			plate->thumbnail_data.reset();
+            plate->no_light_thumbnail_data.reset();
 			plate->top_thumbnail_data.reset();
 			plate->pick_thumbnail_data.reset();
 			return 0;
 		}
 		plate->update_slice_result_valid_state();
 		plate->thumbnail_data.reset();
+        plate->no_light_thumbnail_data.reset();
 		plate->top_thumbnail_data.reset();
 		plate->pick_thumbnail_data.reset();
 	}
@@ -4164,7 +4250,7 @@ int PartPlateList::notify_instance_update(int obj_id, int instance_id, bool is_n
 		{
 			//found a new plate, add it to plate
 			plate->add_instance(obj_id, instance_id, false, &boundingbox);
-			
+
 			// spiral mode, update object setting
 			if (plate->config()->has("spiral_mode") && plate->config()->opt_bool("spiral_mode") && !is_object_config_compatible_with_spiral_vase(object)) {
 				if (!is_new) {
@@ -4180,6 +4266,7 @@ int PartPlateList::notify_instance_update(int obj_id, int instance_id, bool is_n
 
 			plate->update_slice_result_valid_state();
 			plate->thumbnail_data.reset();
+            plate->no_light_thumbnail_data.reset();
 			plate->top_thumbnail_data.reset();
 			plate->pick_thumbnail_data.reset();
 			BOOST_LOG_TRIVIAL(debug) << __FUNCTION__ << boost::format(": add it to new plate %1%") % i;
@@ -4217,6 +4304,7 @@ int PartPlateList::notify_instance_removed(int obj_id, int instance_id)
 		plate->remove_instance(obj_id, instance_to_delete);
 		plate->update_slice_result_valid_state();
 		plate->thumbnail_data.reset();
+        plate->no_light_thumbnail_data.reset();
 		plate->top_thumbnail_data.reset();
 		plate->pick_thumbnail_data.reset();
 	}
@@ -5141,6 +5229,8 @@ int PartPlateList::store_to_3mf_structure(PlateDataPtrs& plate_data_list, bool w
 			%(i+1) %plate_data_item->plate_thumbnail.width %plate_data_item->plate_thumbnail.height %plate_data_item->plate_thumbnail.pixels.size();
 		plate_data_item->config.apply(*m_plate_list[i]->config());
 
+		if (m_plate_list[i]->no_light_thumbnail_data.is_valid())
+			plate_data_item->no_light_thumbnail_file = "valid_no_light";
 		if (m_plate_list[i]->top_thumbnail_data.is_valid())
 			plate_data_item->top_file = "valid_top";
 		if (m_plate_list[i]->pick_thumbnail_data.is_valid())
@@ -5253,6 +5343,13 @@ int PartPlateList::load_from_3mf_structure(PlateDataPtrs& plate_data_list)
 				m_plate_list[index]->load_thumbnail_data(plate_data_list[i]->thumbnail_file, m_plate_list[index]->thumbnail_data);
 				BOOST_LOG_TRIVIAL(info) << __FUNCTION__ <<boost::format(": plate %1% after load, width %2%, height %3%, size %4%!")
 					%(i+1) %m_plate_list[index]->thumbnail_data.width %m_plate_list[index]->thumbnail_data.height %m_plate_list[index]->thumbnail_data.pixels.size();
+			}
+		}
+
+		if (m_plater && !plate_data_list[i]->no_light_thumbnail_file.empty()) {
+			if (boost::filesystem::exists(plate_data_list[i]->no_light_thumbnail_file)) {
+				BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(": plate %1%, load no_light_thumbnail_file from %2%.")%(i+1) %plate_data_list[i]->no_light_thumbnail_file;
+				m_plate_list[index]->load_thumbnail_data(plate_data_list[i]->no_light_thumbnail_file, m_plate_list[index]->no_light_thumbnail_data);
 			}
 		}
 

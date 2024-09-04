@@ -36,6 +36,7 @@
 #define TIMEOUT_RESPONSE            15
 
 #define BE_UNACTED_ON               0x00200001
+#define SHOW_BACKGROUND_BITMAP_PIXEL_THRESHOLD 80
 #ifndef _MSW_DARK_MODE
     #define _MSW_DARK_MODE            1
 #endif // _MSW_DARK_MODE
@@ -342,6 +343,9 @@ private:
 
     bool show_3d_navigator() const { return app_config->get_bool("show_3d_navigator"); }
     void toggle_show_3d_navigator() const { app_config->set_bool("show_3d_navigator", !show_3d_navigator()); }
+
+    bool show_outline() const { return app_config->get_bool("show_outline"); }
+    void toggle_show_outline() const { app_config->set_bool("show_outline", !show_outline()); }
 
     wxString get_inf_dialog_contect () {return m_info_dialog_content;};
 

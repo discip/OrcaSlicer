@@ -14,6 +14,9 @@
 
 namespace Slic3r {
 namespace GUI {
+const float MIN_PA_K_VALUE = 0.0;
+const float MAX_PA_K_VALUE = 1.0;
+
 std::unique_ptr<Worker> CalibUtils::print_worker;
 wxString wxstr_temp_dir = fs::path(fs::temp_directory_path() / "calib").wstring();
 static const std::string temp_dir = wxstr_temp_dir.utf8_string();
@@ -615,7 +618,7 @@ void CalibUtils::calib_pa_pattern(const CalibInfo &calib_info, Model& model)
 
     float nozzle_diameter = printer_config.option<ConfigOptionFloats>("nozzle_diameter")->get_at(0);
 
-    for (const auto opt : SuggestedConfigCalibPAPattern().float_pairs) {
+    for (const auto& opt : SuggestedConfigCalibPAPattern().float_pairs) {
         print_config.set_key_value(opt.first, new ConfigOptionFloat(opt.second));
     }
 
@@ -624,11 +627,11 @@ void CalibUtils::calib_pa_pattern(const CalibInfo &calib_info, Model& model)
             full_config, print_config.get_abs_value("line_width"),
             print_config.get_abs_value("layer_height"), 0)));
     
-    for (const auto opt : SuggestedConfigCalibPAPattern().nozzle_ratio_pairs) {
+    for (const auto& opt : SuggestedConfigCalibPAPattern().nozzle_ratio_pairs) {
         print_config.set_key_value(opt.first, new ConfigOptionFloat(nozzle_diameter * opt.second / 100));
     }
 
-    for (const auto opt : SuggestedConfigCalibPAPattern().int_pairs) {
+    for (const auto& opt : SuggestedConfigCalibPAPattern().int_pairs) {
         print_config.set_key_value(opt.first, new ConfigOptionInt(opt.second));
     }
 
