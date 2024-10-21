@@ -176,7 +176,6 @@ CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(WallSequence)
 
 //Orca
 static t_config_enum_values s_keys_map_WallDirection{
-    { "auto", int(WallDirection::Auto) },
     { "ccw",  int(WallDirection::CounterClockwise) },
     { "cw",   int(WallDirection::Clockwise)},
 };
@@ -881,19 +880,29 @@ void PrintConfigDef::init_fff_params()
 
     def = this->add("overhang_fan_speed", coInts);
     def->label = L("Fan speed for overhang");
-    def->tooltip = L("Force part cooling fan to be this speed when printing bridge or overhang wall which has large overhang degree. "
-                     "Forcing cooling for overhang and bridge can get better quality for these part");
+    def->tooltip = L("Force part cooling fan to be this speed when printing overhang wall which has large overhang degree. "
+                     "Forcing cooling for overhang or external wall can get better quality for these parts");
     def->sidetext = L("%");
     def->min = 0;
     def->max = 100;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionInts { 100 });
 
+    def = this->add("bridge_fan_speed", coInts);
+    def->label = L("Fan speed for bridge");
+    def->tooltip = L("Force part cooling fan to be this speed when printing bridge. If this value is less than fan speed for overhang latter is used. "
+                     "Forcing cooling for bridge can get better quality for these parts");
+    def->sidetext = L("%");
+    def->min = 0;
+    def->max = 100;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInts { 0 });
+
     def = this->add("overhang_fan_threshold", coEnums);
     def->label = L("Cooling overhang threshold");
-    def->tooltip = L("Force cooling fan to be specific speed when overhang degree of printed part exceeds this value. "
+    def->tooltip = L("Force cooling fan speed to be interpolated between fan speed for overhang and fan speed for bridges (and rounded to 10%) when overhang value goes from threshold up to bridge. "
                      "Expressed as percentage which indicates how much width of the line without support from lower layer. "
-                     "0% means forcing cooling for all outer wall no matter how much overhang degree");
+                     "0% means forcing cooling for all outer wall no matter how much overhang degree. ");
     def->sidetext = "";
     def->enum_keys_map = &ConfigOptionEnum<OverhangFanThreshold>::get_enum_values();
     def->mode = comAdvanced;
@@ -918,7 +927,8 @@ void PrintConfigDef::init_fff_params()
         "automatically. Otherwise the provided angle will be used for external bridges. "
         "Use 180°for zero angle.");
     def->sidetext = L("°");
-    def->min = 0;
+    def->min = -180;
+    def->max =  180;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.));
 
@@ -1004,9 +1014,9 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionFloatOrPercent(300, true));
 
     def = this->add("only_one_wall_first_layer", coBool);
-    def->label = L("Only one wall on first layer");
+    def->label = L("One wall on first layer");
     def->category = L("Quality");
-    def->tooltip = L("Use only one wall on first layer, to give more space to the bottom infill pattern");
+    def->tooltip = L("Use only one wall on first layer, to give more space to the bottom infill pattern. Otherwise use two walls.");
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("extra_perimeters_on_overhangs", coBool);
@@ -1016,6 +1026,13 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
+    def = this->add("overhang_after", coBool);
+    def->label = L("Print after internal wall");
+    def->category = L("Quality");
+    def->tooltip = L("Wall with overhang will be printed after internal one despite 'Walls printing order' option. 'Detect overhang wall' should be on, and 'Reverse threshold' defines which overhang print second.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool{false});
+
     def = this->add("overhang_reverse", coBool);
     def->label = L("Reverse on even");
     def->full_label = L("Overhang reversal");
@@ -1024,11 +1041,19 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
     
-    def = this->add("overhang_reverse_internal_only", coBool);
-    def->label = L("Reverse only internal perimeters");
-    def->full_label = L("Reverse only internal perimeters");
+    def = this->add("reverse_internal", coBool);
+    def->label = L("Reverse internal perimeters");
+    def->full_label = L("Reverse internal perimeters");
     def->category = L("Quality");
-    def->tooltip = L("Apply the reverse perimeters logic only on internal perimeters. \n\nThis setting greatly reduces part stresses as they are now distributed in alternating directions. This should reduce part warping while also maintaining external wall quality. This feature can be very useful for warp prone material, like ABS/ASA, and also for elastic filaments, like TPU and Silk PLA. It can also help reduce warping on floating regions over supports.\n\nFor this setting to be the most effective, it is recommended to set the Reverse Threshold to 0 so that all internal walls print in alternating directions on even layers irrespective of their overhang degree.");
+    def->tooltip = L("Apply the reverse perimeters logic on internal perimeters. \n\nThis setting greatly reduces part stresses as they are now distributed in alternating directions. This should reduce part warping while also maintaining external wall quality. This feature can be very useful for warp prone material, like ABS/ASA, and also for elastic filaments, like TPU and Silk PLA. It can also help reduce warping on floating regions over supports.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("reverse_external", coBool);
+    def->label = L("Reverse external perimeters");
+    def->full_label = L("Reverse external perimeters");
+    def->category = L("Quality");
+    def->tooltip = L("Apply the reverse perimeters logic on external perimeters. \n\nThis setting greatly reduces part stresses as they are now distributed in alternating directions. This should reduce part warping while also maintaining external wall quality. This feature can be very useful for warp prone material, like ABS/ASA, and also for elastic filaments, like TPU and Silk PLA. It can also help reduce warping on floating regions over supports.");
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBool(false));
 
@@ -1051,13 +1076,12 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionEnum<CounterboreHoleBridgingOption>(chbNone));
 
     def = this->add("overhang_reverse_threshold", coFloatOrPercent);
-    def->label = L("Reverse threshold");
-    def->full_label = L("Overhang reversal threshold");
+    def->label = L("Overhang threshold");
+    def->full_label = L("Overhang detection threshold");
     def->category = L("Quality");
     // xgettext:no-c-format, no-boost-format
-    def->tooltip = L("Number of mm the overhang need to be for the reversal to be considered useful. Can be a % of the perimeter width."
-                     "\nValue 0 enables reversal on every even layers regardless."
-                     "\nWhen Detect overhang wall is not enabled, this option is ignored and reversal happens on every even layers regardless.");
+    def->tooltip = L("Number of mm the overhang need to be for the reversal and prining internal wall first to be considered useful. Can be a % of the perimeter width."
+                     "\nValue 0 enables reversal on every even layers regardless.");
     def->sidetext = L("mm or %");
     def->ratio_over = "line_width";
     def->min = 0;
@@ -1300,6 +1324,12 @@ void PrintConfigDef::init_fff_params()
     def->enum_labels.push_back(L("By object"));
     def->mode = comSimple;
     def->set_default_value(new ConfigOptionEnum<PrintSequence>(PrintSequence::ByLayer));
+
+    def = this->add("first_layer_at_once", coBool);
+    def->label = L("First layer at once");
+    def->tooltip = L("When printing by object print first layers of all objects at the very beginning to allow adhesion check on pronting start");
+    def->mode = comSimple;
+    def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("print_order", coEnum);
     def->label = L("Intra-layer order");
@@ -1589,14 +1619,12 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Quality");
     def->tooltip = L("The direction which the wall loops are extruded when looking down from the top.\n\nBy default all walls are extruded in counter-clockwise, unless Reverse on even is enabled. Set this to any option other than Auto will force the wall direction regardless of the Reverse on even.\n\nThis option will be disabled if spiral vase mode is enabled.");
     def->enum_keys_map = &ConfigOptionEnum<WallDirection>::get_enum_values();
-    def->enum_values.push_back("auto");
     def->enum_values.push_back("ccw");
     def->enum_values.push_back("cw");
-    def->enum_labels.push_back(L("Auto"));
     def->enum_labels.push_back(L("Counter clockwise"));
     def->enum_labels.push_back(L("Clockwise"));
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionEnum<WallDirection>(WallDirection::Auto));
+    def->set_default_value(new ConfigOptionEnum<WallDirection>(WallDirection::CounterClockwise));
 
     def = this->add("extruder", coInt);
     def->gui_type = ConfigOptionDef::GUIType::i_enum_open;
@@ -2193,8 +2221,8 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Strength");
     def->tooltip = L("Angle for sparse infill pattern, which controls the start or main direction of line");
     def->sidetext = L("°");
-    def->min = 0;
-    def->max = 360;
+    def->min = -180;
+    def->max =  180;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(45));
 
@@ -2203,8 +2231,8 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Strength");
     def->tooltip = L("Angle for solid infill pattern, which controls the start or main direction of line");
     def->sidetext = L("°");
-    def->min = 0;
-    def->max = 360;
+    def->min = -180;
+    def->max =  180;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(45));
 
@@ -2435,7 +2463,7 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Top surface");
     def->tooltip = L("Jerk for top surface");
     def->sidetext = L("mm/s");
-    def->min = 1;
+    def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(9));
 
@@ -2443,7 +2471,7 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Infill");
     def->tooltip = L("Jerk for infill");
     def->sidetext = L("mm/s");
-    def->min = 1;
+    def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(9));
 
@@ -2451,7 +2479,7 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Initial layer");
     def->tooltip = L("Jerk for initial layer");
     def->sidetext = L("mm/s");
-    def->min = 1;
+    def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(9));
 
@@ -2459,7 +2487,7 @@ void PrintConfigDef::init_fff_params()
     def->label = L("Travel");
     def->tooltip = L("Jerk for travel");
     def->sidetext = L("mm/s");
-    def->min = 1;
+    def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(12));
 
@@ -3708,6 +3736,12 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionBools { false });
 
+    def = this->add("retract_on_top_layer", coBools);
+    def->label = L("Retract on top layer");
+    def->tooltip = L("Force a retraction on top layer. Disabling could prevent clog on very slow patterns with small movements, like Hilbert curve");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBools { true });
+
     def = this->add("retraction_length", coFloats);
     def->label = L("Length");
     def->full_label = L("Retraction Length");
@@ -4668,10 +4702,21 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Support");
     def->tooltip = L("Support will be generated for overhangs whose slope angle is below the threshold.");
     def->sidetext = L("°");
-    def->min = 1;
+    def->min = 0;
     def->max = 90;
     def->mode = comSimple;
     def->set_default_value(new ConfigOptionInt(30));
+
+    def = this->add("support_threshold_overlap", coFloatOrPercent);
+    def->label = L("Threshold overlap");
+    def->category = L("Support");
+    def->tooltip = L("Support will be generated for overhangs whose overlap is below the threshold. The smaller this value is, the steeper the overhang that can be printed without support.");
+    def->sidetext = L("mm or %");
+    def->min = 0;
+    def->max = 100;
+    def->max_literal = 0.5;
+    def->mode = comSimple;
+    def->set_default_value(new ConfigOptionFloatOrPercent(50., true));
 
     def = this->add("tree_support_branch_angle", coFloat);
     def->label = L("Tree support branch angle");
@@ -5368,7 +5413,7 @@ void PrintConfigDef::init_fff_params()
         // BBS: floats
         "wipe_distance",
         // bools
-        "retract_when_changing_layer", "wipe",
+        "retract_when_changing_layer", "retract_on_top_layer", "wipe",
         // percents
         "retract_before_wipe",
         "long_retractions_when_cut",
@@ -5420,7 +5465,7 @@ void PrintConfigDef::init_extruder_option_keys()
         "nozzle_diameter", "min_layer_height", "max_layer_height", "extruder_offset",
         "retraction_length", "z_hop", "z_hop_types", "travel_slope", "retract_lift_above", "retract_lift_below", "retract_lift_enforce", "retraction_speed", "deretraction_speed",
         "retract_before_wipe", "retract_restart_extra", "retraction_minimum_travel", "wipe", "wipe_distance",
-        "retract_when_changing_layer", "retract_length_toolchange", "retract_restart_extra_toolchange", "extruder_colour",
+        "retract_when_changing_layer", "retract_on_top_layer", "retract_length_toolchange", "retract_restart_extra_toolchange", "extruder_colour",
         "default_filament_profile","retraction_distances_when_cut","long_retractions_when_cut"
     };
 
@@ -5433,6 +5478,7 @@ void PrintConfigDef::init_extruder_option_keys()
         "retract_lift_enforce",
         "retract_restart_extra",
         "retract_when_changing_layer",
+        "retract_on_top_layer",
         "retraction_distances_when_cut",
         "retraction_length",
         "retraction_minimum_travel",
@@ -5452,7 +5498,7 @@ void PrintConfigDef::init_filament_option_keys()
         "filament_diameter", "min_layer_height", "max_layer_height",
         "retraction_length", "z_hop", "z_hop_types", "retract_lift_above", "retract_lift_below", "retract_lift_enforce", "retraction_speed", "deretraction_speed",
         "retract_before_wipe", "retract_restart_extra", "retraction_minimum_travel", "wipe", "wipe_distance",
-        "retract_when_changing_layer", "retract_length_toolchange", "retract_restart_extra_toolchange", "filament_colour",
+        "retract_when_changing_layer", "retract_on_top_layer", "retract_length_toolchange", "retract_restart_extra_toolchange", "filament_colour",
         "default_filament_profile","retraction_distances_when_cut","long_retractions_when_cut"/*,"filament_seam_gap"*/
     };
 
@@ -5465,6 +5511,7 @@ void PrintConfigDef::init_filament_option_keys()
         "retract_lift_enforce",
         "retract_restart_extra",
         "retract_when_changing_layer",
+        "retract_on_top_layer",
         "retraction_distances_when_cut",
         "retraction_length",
         "retraction_minimum_travel",
@@ -6121,8 +6168,6 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
         opt_key = "prime_tower_brim_width";
     } else if (opt_key == "tool_change_gcode") {
         opt_key = "change_filament_gcode";
-    } else if (opt_key == "bridge_fan_speed") {
-        opt_key = "overhang_fan_speed";
     } else if (opt_key == "infill_extruder") {
         opt_key = "sparse_infill_filament";
     }else if (opt_key == "solid_infill_extruder") {
@@ -6231,6 +6276,9 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
     }
     else if(opt_key == "counterbole_hole_bridging") {
         opt_key = "counterbore_hole_bridging";
+    }
+    else if (opt_key == "wall_direction" && value == "auto") {
+        value = "ccw";
     }
     else if (opt_key == "draft_shield" && value == "limited") {
         value = "disabled";

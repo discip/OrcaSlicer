@@ -92,6 +92,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "enable_overhang_bridge_fan",
         "overhang_fan_speed",
         "overhang_fan_threshold",
+        "bridge_fan_speed",
         "slow_down_for_layer_cooling",
         "default_acceleration",
         "deretraction_speed",
@@ -148,6 +149,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "retraction_minimum_travel",
         "retract_before_wipe",
         "retract_when_changing_layer",
+        "retract_on_top_layer",
         "retraction_length",
         "retract_length_toolchange",
         "z_hop",
@@ -246,6 +248,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             osteps.emplace_back(posSlice);
         } else if (
                opt_key == "print_sequence"
+            || opt_key == "first_layer_at_once"
             || opt_key == "filament_type"
             || opt_key == "chamber_temperature"
             || opt_key == "nozzle_temperature_initial_layer"
@@ -323,7 +326,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             //BBS: when enable arc fitting, we must re-generate perimeter
             || opt_key == "enable_arc_fitting"
             || opt_key == "print_order"
-            || opt_key == "wall_sequence") {
+            || opt_key == "wall_sequence"
+            || opt_key == "overhang_after") {
             osteps.emplace_back(posPerimeters);
             osteps.emplace_back(posEstimateCurledExtrusions);
             osteps.emplace_back(posInfill);

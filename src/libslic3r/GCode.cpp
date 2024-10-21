@@ -1241,7 +1241,7 @@ std::vector<GCode::LayerToPrint> GCode::collect_layers_to_print(const PrintObjec
 // Prepare for non-sequential printing of multiple objects: Support resp. object layers with nearly identical print_z
 // will be printed for  all objects at once.
 // Return a list of <print_z, per object LayerToPrint> items.
-std::vector<std::pair<coordf_t, std::vector<GCode::LayerToPrint>>> GCode::collect_layers_to_print(const Print& print)
+std::vector<std::pair<coordf_t, std::vector<GCode::LayerToPrint>>> GCode::collect_layers_to_print(const Print& print, bool first_only)
 {
     struct OrderingItem {
         coordf_t    print_z;
@@ -1269,6 +1269,8 @@ std::vector<std::pair<coordf_t, std::vector<GCode::LayerToPrint>>> GCode::collec
             ordering_item.print_z = ltp.print_z();
             ordering_item.layer_idx = &ltp - &front;
             ordering.emplace_back(ordering_item);
+            if (first_only)
+                break;
         }
     }
 
@@ -2473,6 +2475,10 @@ void GCode::_do_export(Print& print, GCodeOutputStream &file, ThumbnailsGenerato
         if (print.config().print_sequence == PrintSequence::ByObject && !has_wipe_tower) {
             size_t finished_objects = 0;
             const PrintObject *prev_object = (*print_object_instance_sequential_active)->print_object;
+
+            if (print.config().first_layer_at_once)
+                this->process_layers(print, tool_ordering, print_object_instances_ordering, collect_layers_to_print(print, true), file);
+
             for (; print_object_instance_sequential_active != print_object_instances_ordering.end(); ++ print_object_instance_sequential_active) {
                 const PrintObject &object = *(*print_object_instance_sequential_active)->print_object;
                 if (&object != prev_object || tool_ordering.first_extruder() != final_extruder_id) {
@@ -2526,7 +2532,11 @@ void GCode::_do_export(Print& print, GCodeOutputStream &file, ThumbnailsGenerato
                 // Process all layers of a single object instance (sequential mode) with a parallel pipeline:
                 // Generate G-code, run the filters (vase mode, cooling buffer), run the G-code analyser
                 // and export G-code into file.
-                this->process_layers(print, tool_ordering, collect_layers_to_print(object), *print_object_instance_sequential_active - object.instances().data(), file, prime_extruder);
+
+                std::vector<GCode::LayerToPrint> layers = collect_layers_to_print(object);
+                if (print.config().first_layer_at_once)
+                    layers.erase(layers.begin());
+                this->process_layers(print, tool_ordering, layers, *print_object_instance_sequential_active - object.instances().data(), file, prime_extruder);
                 //BBS: close powerlost recovery
                 {
                     if (is_bbl_printers && m_second_layer_things_done) {
@@ -4096,7 +4106,7 @@ LayerResult GCode::process_layer(
 
         // BBS
         if (print.config().skirt_type == stPerObject &&
-            print.config().print_sequence == PrintSequence::ByObject &&
+            print.config().print_sequence == PrintSequence::ByObject && !(print.config().first_layer_at_once && first_layer) &&
             !layer.object()->object_skirt().empty() &&
             ((layer.id() < print.config().skirt_height || print.config().draft_shield == DraftShield::dsEnabled))
            )
@@ -4133,7 +4143,7 @@ LayerResult GCode::process_layer(
             for (InstanceToPrint &instance_to_print : instances_to_print) {
                 if (print.config().skirt_type == stPerObject && 
                     !instance_to_print.print_object.object_skirt().empty() &&
-                    print.config().print_sequence == PrintSequence::ByLayer
+                    (print.config().print_sequence == PrintSequence::ByLayer || (print.config().first_layer_at_once && first_layer))
                     &&
                     (layer.id() < print.config().skirt_height || print.config().draft_shield == DraftShield::dsEnabled))
                 {
@@ -4565,7 +4575,10 @@ std::string GCode::extrude_loop(ExtrusionLoop loop, std::string description, dou
 
     if (m_config.spiral_mode && !is_hole) {
         // if spiral vase, we have to ensure that all contour are in the same orientation.
-        loop.make_counter_clockwise();
+        if (m_config.wall_direction == WallDirection::CounterClockwise)
+            loop.make_counter_clockwise();
+        else
+            loop.make_clockwise();
     }
     if (loop.loop_role() == elrSkirt && (this->m_layer->id() % 2 == 1))
         loop.reverse();
@@ -4576,7 +4589,16 @@ std::string GCode::extrude_loop(ExtrusionLoop loop, std::string description, dou
     float seam_overhang = std::numeric_limits<float>::lowest();
     if (!m_config.spiral_mode && description == "perimeter") {
         assert(m_layer != nullptr);
-        m_seam_placer.place_seam(m_layer, loop, this->last_pos(), seam_overhang);
+        bool rev = false;
+
+        if (region_perimeters.size() > 1) {
+            ExtrusionLoop* p0 = dynamic_cast<ExtrusionLoop*>(region_perimeters[0]);
+            ExtrusionLoop* p1 = dynamic_cast<ExtrusionLoop*>(region_perimeters[1]);
+            if (p0 && p1)
+                rev = p0->is_clockwise() != p1->is_clockwise();
+        }
+
+        m_seam_placer.place_seam(m_layer, loop, this->last_pos(), rev, seam_overhang);
     } else
         loop.split_at(last_pos, false);
 
@@ -4626,7 +4648,7 @@ std::string GCode::extrude_loop(ExtrusionLoop loop, std::string description, dou
     // 1 - the currently printed external perimeter and 2 - the neighbouring internal perimeter.
     if (m_config.wipe_before_external_loop.value && !paths.empty() && paths.front().size() > 1 && paths.back().size() > 1 && paths.front().role() == erExternalPerimeter && region_perimeters.size() > 1) {
         const bool is_full_loop_ccw = loop.polygon().is_counter_clockwise();
-        bool is_hole_loop = (loop.loop_role() & ExtrusionLoopRole::elrHole) != 0; // loop.make_counter_clockwise();
+        bool is_hole_loop = (loop.loop_role() & ExtrusionLoopRole::elrHole) != 0;
         const double nozzle_diam = nozzle_diameter;
 
         // note: previous & next are inverted to extrude "in the opposite direction, and we are "rewinding"
@@ -5580,10 +5602,29 @@ std::string GCode::_extrude(const ExtrusionPath &path, std::string description, 
                     : overhang_fan_threshold - 1;
                     if ((overhang_fan_threshold == Overhang_threshold_none && is_external_perimeter(path.role())) ||
                         (path.get_overhang_degree() > overhang_threshold || is_bridge(path.role()))) {
-                        if (!m_is_overhang_fan_on) {
-                            gcode += ";_OVERHANG_FAN_START\n";
-                            m_is_overhang_fan_on = true;
+                        if (is_bridge(path.role())) {
+                            //Classic/Modern
+                            gcode += ";_OVERHANG_FAN_START@100\n";
+                        } else {
+                            //Classic
+                            int overhang_degree = 0;
+                            switch (path.get_overhang_degree()) {
+                            case Overhang_threshold_1_4:
+                                overhang_degree = 25;
+                                break;
+                            case Overhang_threshold_2_4:
+                                overhang_degree = 50;
+                                break;
+                            case Overhang_threshold_3_4:
+                                overhang_degree = 75;
+                                break;
+                            case Overhang_threshold_4_4:
+                                overhang_degree = 95;
+                                break;
+                            }
+                            gcode += ";_OVERHANG_FAN_START@" + std::to_string(overhang_degree) + "\n";
                         }
+                        m_is_overhang_fan_on = true;
                     } else {
                         if (m_is_overhang_fan_on) {
                             m_is_overhang_fan_on = false;
@@ -5615,8 +5656,7 @@ std::string GCode::_extrude(const ExtrusionPath &path, std::string description, 
                         continue;
                     path_length += line_length;
                     auto dE = e_per_mm * line_length;
-                    if (!this->on_first_layer() && m_small_area_infill_flow_compensator
-                            && m_config.small_area_infill_flow_compensation.value) {
+                    if (m_small_area_infill_flow_compensator && m_config.small_area_infill_flow_compensation.value) {
                         auto oldE = dE;
                         dE = m_small_area_infill_flow_compensator->modify_flow(line_length, dE, path.role());
 
@@ -5657,8 +5697,7 @@ std::string GCode::_extrude(const ExtrusionPath &path, std::string description, 
                             if (line_length < EPSILON)
                                 continue;
                             auto dE = e_per_mm * line_length;
-                            if (!this->on_first_layer() && m_small_area_infill_flow_compensator
-                                    && m_config.small_area_infill_flow_compensation.value) {
+                            if (m_small_area_infill_flow_compensator  && m_config.small_area_infill_flow_compensation.value) {
                                 auto oldE = dE;
                                 dE = m_small_area_infill_flow_compensator->modify_flow(line_length, dE, path.role());
 
@@ -5681,8 +5720,7 @@ std::string GCode::_extrude(const ExtrusionPath &path, std::string description, 
                             continue;
                         const Vec2d center_offset = this->point_to_gcode(arc.center) - this->point_to_gcode(arc.start_point);
                         auto dE = e_per_mm * arc_length;
-                        if (!this->on_first_layer() && m_small_area_infill_flow_compensator
-                                && m_config.small_area_infill_flow_compensation.value) {
+                        if (m_small_area_infill_flow_compensator && m_config.small_area_infill_flow_compensation.value) {
                             auto oldE = dE;
                             dE = m_small_area_infill_flow_compensator->modify_flow(arc_length, dE, path.role());
 
@@ -5733,12 +5771,13 @@ std::string GCode::_extrude(const ExtrusionPath &path, std::string description, 
             Vec2d p = this->point_to_gcode_quantized(processed_point.p);
             if (m_enable_cooling_markers) {
                 if (enable_overhang_bridge_fan) {
+                    //Modern
                     cur_fan_enabled = check_overhang_fan(processed_point.overlap, path.role());
+                    float overlap = is_bridge(path.role()) ? 0 : std::max(std::abs(processed_point.overlap), std::abs(pre_processed_point.overlap));
+
                     if (pre_fan_enabled && cur_fan_enabled) {
-                        if (!m_is_overhang_fan_on) {
-                            gcode += ";_OVERHANG_FAN_START\n";
-                            m_is_overhang_fan_on = true;
-                        }
+                        gcode += ";_OVERHANG_FAN_START@" + std::to_string(int(100 - overlap*100))+"\n";
+                        m_is_overhang_fan_on = true;
                     } else {
                         if (m_is_overhang_fan_on) {
                             m_is_overhang_fan_on = false;
@@ -5820,8 +5859,7 @@ std::string GCode::_extrude(const ExtrusionPath &path, std::string description, 
                 last_set_speed = F;
             }
             auto dE = e_per_mm * line_length;
-            if (!this->on_first_layer() && m_small_area_infill_flow_compensator
-                     && m_config.small_area_infill_flow_compensation.value) {
+            if (m_small_area_infill_flow_compensator  && m_config.small_area_infill_flow_compensation.value) {
                 auto oldE = dE;
                 dE = m_small_area_infill_flow_compensator->modify_flow(line_length, dE, path.role());
 
@@ -5935,21 +5973,13 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
     // Orca: we don't need to optimize the Klipper as only set once
     double jerk_to_set = 0.0;
     unsigned int acceleration_to_set = 0;
-    if (this->on_first_layer()) {
-        if (m_config.default_acceleration.value > 0 && m_config.initial_layer_acceleration.value > 0) {
-            acceleration_to_set = (unsigned int) floor(m_config.initial_layer_acceleration.value + 0.5);
-        }
-        if (m_config.default_jerk.value > 0 && m_config.initial_layer_jerk.value > 0) {
-            jerk_to_set = m_config.initial_layer_jerk.value;
-        }
-    } else {
-        if (m_config.default_acceleration.value > 0 && m_config.travel_acceleration.value > 0) {
-            acceleration_to_set = (unsigned int) floor(m_config.travel_acceleration.value + 0.5);
-        }
-        if (m_config.default_jerk.value > 0 && m_config.travel_jerk.value > 0) {
-            jerk_to_set = m_config.travel_jerk.value;
-        }
+    if (m_config.default_acceleration.value > 0 && m_config.travel_acceleration.value > 0) {
+        acceleration_to_set = (unsigned int) floor(m_config.travel_acceleration.value + 0.5);
     }
+    if (m_config.default_jerk.value > 0 && m_config.travel_jerk.value > 0) {
+        jerk_to_set = m_config.travel_jerk.value;
+    }
+
     if (m_writer.get_gcode_flavor() == gcfKlipper) {
         gcode += m_writer.set_accel_and_jerk(acceleration_to_set, jerk_to_set);
     } else {
@@ -5981,7 +6011,7 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
             m_wipe.reset_path();*/
 
         Point last_post_before_retract = this->last_pos();
-        gcode += this->retract(false, false, lift_type);
+        gcode += this->retract(false, false, lift_type, role);
         // When "Wipe while retracting" is enabled, then extruder moves to another position, and travel from this position can cross perimeters.
         // Because of it, it is necessary to call avoid crossing perimeters again with new starting point after calling retraction()
         // FIXME Lukas H.: Try to predict if this second calling of avoid crossing perimeters will be needed or not. It could save computations.
@@ -6183,7 +6213,7 @@ bool GCode::needs_retraction(const Polyline &travel, ExtrusionRole role, LiftTyp
     return true;
 }
 
-std::string GCode::retract(bool toolchange, bool is_last_retraction, LiftType lift_type)
+std::string GCode::retract(bool toolchange, bool is_last_retraction, LiftType lift_type, ExtrusionRole role)
 {
     std::string gcode;
 
@@ -6201,7 +6231,8 @@ std::string GCode::retract(bool toolchange, bool is_last_retraction, LiftType li
         (the extruder might be already retracted fully or partially). We call these
         methods even if we performed wipe, since this will ensure the entire retraction
         length is honored in case wipe path was too short.  */
-    gcode += toolchange ? m_writer.retract_for_toolchange() : m_writer.retract();
+    if (role != erTopSolidInfill || EXTRUDER_CONFIG(retract_on_top_layer))
+        gcode += toolchange ? m_writer.retract_for_toolchange() : m_writer.retract();
 
     gcode += m_writer.reset_e();
     // Orca: check if should + can lift (roughly from SuperSlicer)

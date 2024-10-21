@@ -61,7 +61,7 @@ static SettingsFactory::Bundle FREQ_SETTINGS_BUNDLE_FFF =
     { L("Shell"), { "wall_loops", "top_shell_layers", "bottom_shell_layers"} },
     { L("Infill")               , { "sparse_infill_density", "sparse_infill_pattern" } },
     // BBS
-    { L("Support")     , { "enable_support", "support_type", "support_threshold_angle",
+    { L("Support")     , { "enable_support", "support_type", "support_threshold_angle", "support_threshold_overlap",
                                     "support_base_pattern", "support_on_build_plate_only","support_critical_regions_only",
                                     "support_remove_small_overhang",
                                     "support_base_pattern_spacing", "support_expansion"}},
@@ -83,12 +83,12 @@ std::map<std::string, std::vector<SimpleSettingData>>  SettingsFactory::OBJECT_C
                     {"seam_position", "",2},
                     {"slice_closing_radius", "",3}, {"resolution", "",4},
                     {"xy_hole_compensation", "",5}, {"xy_contour_compensation", "",6}, {"elefant_foot_compensation", "",7},
-                    {"make_overhang_printable_angle","", 8},{"make_overhang_printable_hole_size","",9}, {"wall_sequence","",10},
+                    {"make_overhang_printable_angle","", 8},{"make_overhang_printable_hole_size","",9}, {"wall_sequence","",10}, {"overhang_after","",10},
                     {"precise_z_height", "",10}
 
                     }},
     { L("Support"), {{"brim_type", "",1},{"brim_width", "",2},{"brim_object_gap", "",3},
-                    {"enable_support", "",4},{"support_type", "",5},{"support_threshold_angle", "",6},{"support_on_build_plate_only", "",7},
+                    {"enable_support", "",4},{"support_type", "",5},{"support_threshold_angle", "",6}, {"support_threshold_overlap", "",6}, {"support_on_build_plate_only", "",7},
                     {"support_filament", "",8},{"support_interface_filament", "",9},{"support_expansion", "",24},{"support_style", "",25},
                     {"tree_support_brim_width", "",26}, {"tree_support_branch_angle", "",10},{"tree_support_branch_angle_organic","",10}, {"tree_support_wall_count", "",11},//tree support
                             {"support_top_z_distance", "",13},{"support_bottom_z_distance", "",12},{"support_base_pattern", "",14},{"support_base_pattern_spacing", "",15},
@@ -150,7 +150,7 @@ std::vector<SimpleSettingData> SettingsFactory::get_visible_options(const std::s
         //Quality
         "layer_height", "initial_layer_print_height", "adaptive_layer_height", "seam_position", "xy_hole_compensation", "xy_contour_compensation", "elefant_foot_compensation", "support_line_width",
         //Support
-        "enable_support", "support_type", "support_threshold_angle", "support_on_build_plate_only", "support_critical_regions_only", "enforce_support_layers",
+        "enable_support", "support_type", "support_threshold_angle", "support_threshold_overlap", "support_on_build_plate_only", "support_critical_regions_only", "enforce_support_layers",
         //tree support
         "tree_support_wall_count",
         //support
@@ -776,7 +776,7 @@ void MenuFactory::append_menu_item_fill_bed(wxMenu *menu)
 {
     append_menu_item(
         menu, wxID_ANY, _L("Fill bed with copies"), _L("Fill the remaining area of bed with copies of the selected object"),
-        [](wxCommandEvent &) { plater()->fill_bed_with_instances(); }, "", nullptr, []() { return plater()->can_increase_instances(); }, m_parent);
+        [](wxCommandEvent &) { plater()->fill_bed_with_copies(); }, "", nullptr, []() { return plater()->can_increase_instances(); }, m_parent);
 }
 
 wxMenuItem* MenuFactory::append_menu_item_printable(wxMenu* menu)
@@ -1254,7 +1254,7 @@ void MenuFactory::create_common_object_menu(wxMenu* menu)
 {
     append_menu_item_rename(menu);
     // BBS
-    //append_menu_items_instance_manipulation(menu);
+    append_menu_items_instance_manipulation(menu);
     // Delete menu was moved to be after +/- instace to make it more difficult to be selected by mistake.
     append_menu_item_delete(menu);
     //append_menu_item_instance_to_object(menu);
@@ -1296,6 +1296,9 @@ void MenuFactory::create_object_menu()
 
 void MenuFactory::create_extra_object_menu()
 {
+    // Object instances
+    append_menu_items_instance_manipulation(&m_object_menu);
+    m_object_menu.AppendSeparator();
     append_menu_item_fill_bed(&m_object_menu);
     // Object Clone
     append_menu_item_clone(&m_object_menu);
@@ -1738,6 +1741,24 @@ wxMenu* MenuFactory::assemble_multi_selection_menu()
     return menu;
 }
 
+//PS
+void MenuFactory::append_menu_items_instance_manipulation(wxMenu* menu)
+{
+    MenuType type = menu == &m_object_menu ? mtObjectFFF : mtObjectSLA;
+
+    items_increase[type]                = append_menu_item(menu, wxID_ANY, _L("Add instance") + "\t+", _L("Add one more instance of the selected object"),
+        [](wxCommandEvent&) { plater()->increase_instances();      }, "", nullptr, 
+        []() { return plater()->can_increase_instances(); }, m_parent);
+    items_decrease[type]                = append_menu_item(menu, wxID_ANY, _L("Remove instance") + "\t-", _L("Remove one instance of the selected object"),
+        [](wxCommandEvent&) { plater()->decrease_instances();      }, "", nullptr, 
+        []() { return plater()->can_decrease_instances(); }, m_parent);
+    items_set_number_of_copies[type]    = append_menu_item(menu, wxID_ANY, _L("Set number of instances") + dots, _L("Change the number of instances of the selected object"),
+        [](wxCommandEvent&) { plater()->set_number_of_copies();    }, "", nullptr,
+        []() { return plater()->can_increase_instances(); }, m_parent);
+    append_menu_item(menu, wxID_ANY, _L("Fill bed with instances") + dots, _L("Fill the remaining area of bed with instances of the selected object"),
+        [](wxCommandEvent&) { plater()->fill_bed_with_instances();    }, "", nullptr, 
+        []() { return plater()->can_increase_instances(); }, m_parent);
+}
 
 //BBS: add partplate related logic
 wxMenu* MenuFactory::plate_menu()

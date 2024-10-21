@@ -44,6 +44,11 @@ void ConfigManipulation::toggle_field(const std::string &opt_key, const bool tog
 
 void ConfigManipulation::toggle_line(const std::string& opt_key, const bool toggle)
 {
+    if (wxGetApp().app_config->get("hide_options") == "false") {
+        toggle_field(opt_key, toggle);
+        return;
+    }
+    
     if (local_config) {
         if (local_config->option(opt_key) == nullptr)
             return;
@@ -293,7 +298,6 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
            config->opt_int("enforce_support_layers") == 0 &&
            ! config->opt_bool("detect_thin_wall") &&
            ! config->opt_bool("overhang_reverse") &&
-            config->opt_enum<WallDirection>("wall_direction") == WallDirection::Auto &&
             config->opt_enum<TimelapseType>("timelapse_type") == TimelapseType::tlTraditional))
     {
         DynamicPrintConfig new_conf = *config;
@@ -307,7 +311,6 @@ void ConfigManipulation::update_print_fff_config(DynamicPrintConfig* config, con
             new_conf.set_key_value("enforce_support_layers", new ConfigOptionInt(0));
             new_conf.set_key_value("detect_thin_wall", new ConfigOptionBool(false));
             new_conf.set_key_value("overhang_reverse", new ConfigOptionBool(false));
-            new_conf.set_key_value("wall_direction", new ConfigOptionEnum<WallDirection>(WallDirection::Auto));
             new_conf.set_key_value("timelapse_type", new ConfigOptionEnum<TimelapseType>(tlTraditional));
             sparse_infill_density = 0;
             timelapse_type = TimelapseType::tlTraditional;
@@ -505,7 +508,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     }
     
     bool have_perimeters = config->opt_int("wall_loops") > 0;
-    for (auto el : { "extra_perimeters_on_overhangs", "ensure_vertical_shell_thickness", "detect_thin_wall", "detect_overhang_wall",
+    for (auto el : { "ensure_vertical_shell_thickness", "detect_thin_wall", "detect_overhang_wall",
         "seam_position", "staggered_inner_seams", "wall_sequence", "outer_wall_line_width",
         "inner_wall_speed", "outer_wall_speed", "small_perimeter_speed", "small_perimeter_threshold" })
         toggle_field(el, have_perimeters);
@@ -540,8 +543,6 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     toggle_field("top_shell_thickness", ! has_spiral_vase && has_top_solid_infill);
     toggle_field("bottom_shell_thickness", ! has_spiral_vase && has_bottom_solid_infill);
 
-    toggle_field("wall_direction", !has_spiral_vase);
-    
     // Gap fill is newly allowed in between perimeter lines even for empty infill (see GH #1476).
     toggle_field("gap_infill_speed", have_perimeters);
     
@@ -598,6 +599,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
         "support_object_xy_distance"/*, "independent_support_layer_height"*/})
         toggle_field(el, have_support_material);
     toggle_field("support_threshold_angle", have_support_material && is_auto(support_type));
+    toggle_field("support_threshold_overlap", config->opt_int("support_threshold_angle") == 0 && have_support_material && is_auto(support_type));
     //toggle_field("support_closing_radius", have_support_material && support_style == smsSnug);
     
     bool support_is_tree = config->opt_bool("enable_support") && is_tree(support_type);
@@ -651,6 +653,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     bool have_sequential_printing = (config->opt_enum<PrintSequence>("print_sequence") == PrintSequence::ByObject);
     // for (auto el : { "extruder_clearance_radius", "extruder_clearance_height_to_rod", "extruder_clearance_height_to_lid" })
     //     toggle_field(el, have_sequential_printing);
+    toggle_field("first_layer_at_once", have_sequential_printing);
     toggle_field("print_order", !have_sequential_printing);
 
     toggle_field("single_extruder_multi_material", !is_BBL_Printer);
@@ -732,23 +735,18 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
 
     for (auto el : { "hole_to_polyhole_threshold", "hole_to_polyhole_twisted" })
         toggle_line(el, config->opt_bool("hole_to_polyhole"));
-    
-    bool has_detect_overhang_wall = config->opt_bool("detect_overhang_wall");
-    bool has_overhang_reverse     = config->opt_bool("overhang_reverse");
-    bool force_wall_direction     = config->opt_enum<WallDirection>("wall_direction") != WallDirection::Auto;
-    bool allow_overhang_reverse   = !has_spiral_vase && !force_wall_direction;
-    toggle_field("overhang_reverse", allow_overhang_reverse);
-    toggle_field("overhang_reverse_threshold", has_detect_overhang_wall);
-    toggle_line("overhang_reverse_threshold", allow_overhang_reverse && has_overhang_reverse);
-    toggle_line("overhang_reverse_internal_only", allow_overhang_reverse && has_overhang_reverse);
-    bool has_overhang_reverse_internal_only = config->opt_bool("overhang_reverse_internal_only");
-    if (has_overhang_reverse_internal_only){
-        DynamicPrintConfig new_conf = *config;
-        new_conf.set_key_value("overhang_reverse_threshold", new ConfigOptionFloatOrPercent(0,true));
-        apply(config, &new_conf);
-    }
-    toggle_line("timelapse_type", is_BBL_Printer);
 
+    toggle_line("reverse_external", have_perimeters);
+    toggle_line("reverse_internal", config->opt_int("wall_loops") > 1);
+
+    bool has_detect_overhang_wall = config->opt_bool("detect_overhang_wall") && have_perimeters;
+    bool has_overhang_reverse     = config->opt_bool("overhang_reverse");
+    bool allow_overhang_handling   = has_detect_overhang_wall && !has_spiral_vase;
+    toggle_field("extra_perimeters_on_overhangs", has_detect_overhang_wall && !has_spiral_vase);
+    toggle_field("overhang_reverse", allow_overhang_handling);
+    toggle_line("overhang_reverse_threshold", allow_overhang_handling && has_overhang_reverse);
+    toggle_line("overhang_after", config->opt_int("wall_loops") > 1 && allow_overhang_handling);
+    toggle_line("timelapse_type", is_BBL_Printer);
 
     bool have_small_area_infill_flow_compensation = config->opt_bool("small_area_infill_flow_compensation");
     toggle_line("small_area_infill_flow_compensation_model", have_small_area_infill_flow_compensation);

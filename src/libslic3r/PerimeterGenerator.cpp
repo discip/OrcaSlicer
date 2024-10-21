@@ -481,7 +481,7 @@ static bool should_fuzzify(const FuzzySkinConfig& config, const int layer_id, co
 }
 
 static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perimeter_generator, const PerimeterGeneratorLoops &loops, ThickPolylines &thin_walls,
-    bool &steep_overhang_contour, bool &steep_overhang_hole)
+    bool detect_threshold_overhang, bool &steep_overhang_contour, bool &steep_overhang_hole)
 {
     // loops is an arrayref of ::Loop objects
     // turn each one into an ExtrusionLoop object
@@ -637,7 +637,7 @@ static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perime
             bbox.offset(SCALED_EPSILON);
 
             // Always reverse extrusion if use fuzzy skin: https://github.com/SoftFever/OrcaSlicer/pull/2413#issuecomment-1769735357
-            if (overhangs_reverse && perimeter_generator.has_fuzzy_skin) {
+            if (detect_threshold_overhang && perimeter_generator.has_fuzzy_skin) {
                 if (loop.is_contour) {
                     steep_overhang_contour = true;
                 } else if (perimeter_generator.has_fuzzy_hole) {
@@ -647,7 +647,7 @@ static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perime
             // Detect steep overhang
             // Skip the check if we already found steep overhangs
             bool found_steep_overhang = (loop.is_contour && steep_overhang_contour) || (!loop.is_contour && steep_overhang_hole);
-            if (overhangs_reverse && !found_steep_overhang) {
+            if (detect_threshold_overhang && !found_steep_overhang) {
                 detect_steep_overhang(perimeter_generator.config, loop.is_contour, bbox, extrusion_width, Polygons{polygon}, perimeter_generator.lower_slices,
                                       steep_overhang_contour, steep_overhang_hole);
             }
@@ -735,12 +735,6 @@ static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perime
             if(paths.empty()) continue;
             chain_and_reorder_extrusion_paths(paths, &paths.front().first_point());
         } else {
-            if (overhangs_reverse && perimeter_generator.layer_id > perimeter_generator.object_config->raft_layers) {
-                // Always reverse if detect overhang wall is not enabled
-                steep_overhang_contour = true;
-                steep_overhang_hole    = true;
-            }
-
             ExtrusionPath path(role);
             //BBS.
             path.polyline = polygon.split_at_first_point();
@@ -777,12 +771,15 @@ static ExtrusionEntityCollection traverse_loops(const PerimeterGenerator &perime
         } else {
             const PerimeterGeneratorLoop &loop = loops[idx.first];
             assert(thin_walls.empty());
-            ExtrusionEntityCollection children = traverse_loops(perimeter_generator, loop.children, thin_walls, steep_overhang_contour, steep_overhang_hole);
+            ExtrusionEntityCollection children = traverse_loops(perimeter_generator, loop.children, thin_walls, detect_threshold_overhang, steep_overhang_contour, steep_overhang_hole);
             out.entities.reserve(out.entities.size() + children.entities.size() + 1);
             ExtrusionLoop *eloop = static_cast<ExtrusionLoop*>(coll.entities[idx.first]);
             coll.entities[idx.first] = nullptr;
 
-            eloop->make_counter_clockwise();
+            if (perimeter_generator.config->wall_direction == WallDirection::CounterClockwise)
+                eloop->make_counter_clockwise();
+            else
+                eloop->make_clockwise();
             eloop->inset_idx = loop.depth;
             if (loop.is_contour) {
                 out.append(std::move(children.entities));
@@ -968,7 +965,7 @@ static void smooth_overhang_level(ExtrusionPaths &paths)
 }
 
 static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator& perimeter_generator, std::vector<PerimeterGeneratorArachneExtrusion>& pg_extrusions,
-    bool &steep_overhang_contour, bool &steep_overhang_hole)
+    bool detect_threshold_overhang, bool &steep_overhang_contour, bool &steep_overhang_hole)
 {
     // Detect steep overhangs
     bool overhangs_reverse = perimeter_generator.config->overhang_reverse &&
@@ -1090,7 +1087,7 @@ static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator& p
                                    is_external ? perimeter_generator.ext_perimeter_flow : perimeter_generator.perimeter_flow);
 
             // Always reverse extrusion if use fuzzy skin: https://github.com/SoftFever/OrcaSlicer/pull/2413#issuecomment-1769735357
-            if (overhangs_reverse && perimeter_generator.has_fuzzy_skin) {
+            if (detect_threshold_overhang && perimeter_generator.has_fuzzy_skin) {
                 if (pg_extrusion.is_contour) {
                     steep_overhang_contour = true;
                 } else if (perimeter_generator.has_fuzzy_hole) {
@@ -1100,7 +1097,7 @@ static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator& p
             // Detect steep overhang
             // Skip the check if we already found steep overhangs
             bool found_steep_overhang = (pg_extrusion.is_contour && steep_overhang_contour) || (!pg_extrusion.is_contour && steep_overhang_hole);
-            if (overhangs_reverse && !found_steep_overhang) {
+            if (detect_threshold_overhang && !found_steep_overhang) {
                 std::map<double, ExtrusionPaths> recognization_paths;
                 for (const ExtrusionPath &path : temp_paths) {
                     if (recognization_paths.count(path.width))
@@ -1222,15 +1219,20 @@ static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator& p
                     smooth_overhang_level(paths);
                 }
 
+                if (detect_threshold_overhang) {
+                    for (const ExtrusionPath& path : paths) {
+                        if (path.role() == erOverhangPerimeter) {
+                            if (pg_extrusion.is_contour)
+                                steep_overhang_contour = true;
+                            else
+                                steep_overhang_hole = true;
+                            break;
+                        }
+                    }
+                }
             }
         }
         else {
-            if (overhangs_reverse && perimeter_generator.layer_id > perimeter_generator.object_config->raft_layers) {
-                // Always reverse if detect overhang wall is not enabled
-                steep_overhang_contour = true;
-                steep_overhang_hole    = true;
-            }
-
             extrusion_paths_append(paths, *extrusion, role, is_external ? perimeter_generator.ext_perimeter_flow : perimeter_generator.perimeter_flow);
         }
 
@@ -1238,7 +1240,10 @@ static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator& p
         if (!paths.empty()) {
             if (extrusion->is_closed) {
                 ExtrusionLoop extrusion_loop(std::move(paths), pg_extrusion.is_contour ? elrDefault : elrHole);
-                extrusion_loop.make_counter_clockwise();
+                if (perimeter_generator.config->wall_direction == WallDirection::CounterClockwise)
+                    extrusion_loop.make_counter_clockwise();
+                else
+                    extrusion_loop.make_clockwise();
                 // TODO: it seems in practice that ExtrusionLoops occasionally have significantly disconnected paths,
                 // triggering the asserts below. Is this a problem?
                 for (auto it = std::next(extrusion_loop.paths.begin()); it != extrusion_loop.paths.end(); ++it) {
@@ -1807,27 +1812,27 @@ void PerimeterGenerator::apply_extra_perimeters(ExPolygons &infill_area)
 }
 
 // Reorient loop direction
-static void reorient_perimeters(ExtrusionEntityCollection &entities, bool steep_overhang_contour, bool steep_overhang_hole, bool reverse_internal_only)
+static void reorient_perimeters(ExtrusionEntityCollection &entities, bool reverse_overhang, bool steep_overhang_contour, bool steep_overhang_hole, bool reverse_internal, bool reverse_external)
 {
-    if (steep_overhang_hole || steep_overhang_contour) {
+    if (reverse_overhang || reverse_internal || reverse_external) {
         for (auto entity : entities) {
             if (entity->is_loop()) {
                 ExtrusionLoop *eloop = static_cast<ExtrusionLoop *>(entity);
                 // Only reverse when needed
-                bool need_reverse = ((eloop->loop_role() & elrHole) == elrHole) ? steep_overhang_hole : steep_overhang_contour;
+                bool need_reverse = false;
                 
-                bool isExternal = false;
-                if(reverse_internal_only){
-                    for(auto path : eloop->paths){
-                        if(path.role() == erExternalPerimeter){
-                            isExternal = true;
-                            break;
-                        }
-                    }
-                }
+                for(auto path : eloop->paths) {
+                    if(path.role() == erExternalPerimeter) {
+                        need_reverse = reverse_external || reverse_overhang && (((eloop->loop_role() & elrHole) == elrHole) ? steep_overhang_hole : steep_overhang_contour);
+                        break;
+                    } else{
+                        need_reverse = reverse_internal;
+                        break;
+                    };
+                };
                 
-                if (need_reverse && !isExternal) {
-                    eloop->make_clockwise();
+                if (need_reverse) {
+                    eloop->reverse();
                 }
             }
         }
@@ -1961,6 +1966,8 @@ void PerimeterGenerator::process_classic()
         int sparse_infill_density = this->config->sparse_infill_density.value;
         if (this->config->alternate_extra_wall && this->layer_id % 2 == 1 && !m_spiral_vase && sparse_infill_density > 0) // add alternating extra wall
             loop_number++;
+        if (this->layer_id == 0 && this->config->bottom_shell_layers > 0)
+            loop_number = 1;
         if (this->layer_id == object_config->raft_layers && this->config->only_one_wall_first_layer)
             loop_number = 0;
         // Set the topmost layer to be one wall
@@ -2174,27 +2181,32 @@ void PerimeterGenerator::process_classic()
                     NEXT_CONTOUR: ;
                 }
             }
+
+            bool is_outer_wall_first = this->config->wall_sequence != WallSequence::InnerOuter;
             // at this point, all loops should be in contours[0]
             bool steep_overhang_contour = false;
             bool steep_overhang_hole    = false;
-            const WallDirection wall_direction = config->wall_direction;
-            if (wall_direction != WallDirection::Auto) {
-                // Skip steep overhang detection if wall direction is specified
-                steep_overhang_contour = true;
-                steep_overhang_hole    = true;
-            }
-            ExtrusionEntityCollection entities = traverse_loops(*this, contours.front(), thin_walls, steep_overhang_contour, steep_overhang_hole);
-            // All walls are counter-clockwise initially, so we don't need to reorient it if that's what we want
-            if (wall_direction != WallDirection::CounterClockwise) {
-                reorient_perimeters(entities, steep_overhang_contour, steep_overhang_hole,
-                                    // Reverse internal only if the wall direction is auto
-                                    this->config->overhang_reverse_internal_only && wall_direction == WallDirection::Auto);
-            }
+            bool overhang_reverse = this->config->detect_overhang_wall && this->config->overhang_reverse && (this->layer_id % 2 == 1);
+            bool detect_threshold_overhang = overhang_reverse || this->config->overhang_after;
+
+            ExtrusionEntityCollection entities = traverse_loops(*this, contours.front(), thin_walls, detect_threshold_overhang, steep_overhang_contour, steep_overhang_hole);
+            bool internal_reverse =                                     
+                    (this->config->wall_loops > 2 || this->config->reverse_external) ?
+                        internal_reverse = this->config->reverse_internal && (this->layer_id % 2 == 1)
+                        :
+                        internal_reverse = this->config->reverse_internal && this->layer_id != 0 && !(overhang_reverse && (steep_overhang_contour || steep_overhang_hole));
+            bool reverse_external = this->config->reverse_external && (this->layer_id % 2 == 1);
+
+            reorient_perimeters(entities, overhang_reverse, steep_overhang_contour, steep_overhang_hole,
+                                internal_reverse, reverse_external);
+
+            if (config->overhang_after && is_outer_wall_first && (steep_overhang_contour || steep_overhang_hole))
+                entities.reverse();
 
             // if brim will be printed, reverse the order of perimeters so that
             // we continue inwards after having finished the brim
             // TODO: add test for perimeter order
-            bool is_outer_wall_first = this->config->wall_sequence == WallSequence::OuterInner;
+
             if (is_outer_wall_first ||
                 //BBS: always print outer wall first when there indeed has brim.
                 (this->layer_id == 0 &&
@@ -2879,6 +2891,8 @@ void PerimeterGenerator::process_arachne()
 
         // Set the bottommost layer to be one wall
         const bool is_bottom_layer = (this->layer_id == object_config->raft_layers) ? true : false;
+        if (is_bottom_layer && this->config->bottom_shell_layers > 0)
+            loop_number = 1;
         if (is_bottom_layer && this->config->only_one_wall_first_layer)
             loop_number = 0;
 
@@ -3008,13 +3022,10 @@ void PerimeterGenerator::process_arachne()
         int end_perimeter = -1;
         int direction = -1;
 
-		bool is_outer_wall_first =
-            	this->config->wall_sequence == WallSequence::OuterInner ||
-            	this->config->wall_sequence == WallSequence::InnerOuterInner;
+        bool is_outer_wall_first = this->config->wall_sequence != WallSequence::InnerOuter;
         
         if (layer_id == 0){ // disable inner outer inner algorithm after the first layer
-        	is_outer_wall_first =
-            	this->config->wall_sequence == WallSequence::OuterInner;
+        	is_outer_wall_first = true;
         }
         if (is_outer_wall_first) {
             start_perimeter = 0;
@@ -3191,19 +3202,23 @@ void PerimeterGenerator::process_arachne()
         
         bool steep_overhang_contour = false;
         bool steep_overhang_hole    = false;
-        const WallDirection wall_direction = config->wall_direction;
-        if (wall_direction != WallDirection::Auto) {
-            // Skip steep overhang detection if wall direction is specified
-            steep_overhang_contour = true;
-            steep_overhang_hole    = true;
-        }
-        if (ExtrusionEntityCollection extrusion_coll = traverse_extrusions(*this, ordered_extrusions, steep_overhang_contour, steep_overhang_hole); !extrusion_coll.empty()) {
-            // All walls are counter-clockwise initially, so we don't need to reorient it if that's what we want
-            if (wall_direction != WallDirection::CounterClockwise) {
-                reorient_perimeters(extrusion_coll, steep_overhang_contour, steep_overhang_hole,
-                                    // Reverse internal only if the wall direction is auto
-                                    this->config->overhang_reverse_internal_only && wall_direction == WallDirection::Auto);
-            }
+        bool overhang_reverse = this->config->detect_overhang_wall && this->config->overhang_reverse && (this->layer_id % 2 == 1);
+        bool detect_threshold_overhang = overhang_reverse || this->config->overhang_after;
+
+        if (ExtrusionEntityCollection extrusion_coll = traverse_extrusions(*this, ordered_extrusions, detect_threshold_overhang, steep_overhang_contour, steep_overhang_hole); !extrusion_coll.empty()) {
+            bool internal_reverse =                                     
+                    (this->config->wall_loops > 2 || this->config->reverse_external) ?
+                        internal_reverse = this->config->reverse_internal && (this->layer_id % 2 == 1)
+                        :
+                        internal_reverse = this->config->reverse_internal && this->layer_id != 0 && !(overhang_reverse && (steep_overhang_contour || steep_overhang_hole));
+            bool reverse_external = this->config->reverse_external && (this->layer_id % 2 == 1);
+
+            reorient_perimeters(extrusion_coll, overhang_reverse, steep_overhang_contour, steep_overhang_hole,
+                                internal_reverse, reverse_external);
+
+            if (config->overhang_after && is_outer_wall_first && (steep_overhang_contour || steep_overhang_hole))
+                extrusion_coll.reverse();
+
             this->loops->append(extrusion_coll);
         }
 
