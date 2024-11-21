@@ -692,6 +692,9 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     bool have_avoid_crossing_perimeters = config->opt_bool("reduce_crossing_wall");
     toggle_line("max_travel_detour_distance", have_avoid_crossing_perimeters);
     
+    bool has_avoid_overhang_reverse_internal_only = config->opt_bool("overhang_reverse_internal_only");
+    toggle_line("overhang_reverse_threshold", has_avoid_overhang_reverse_internal_only);
+    
     bool has_overhang_speed = config->opt_bool("enable_overhang_speed");
     for (auto el :
          {"overhang_speed_classic", "overhang_1_4_speed",
