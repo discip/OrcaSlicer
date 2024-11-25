@@ -4556,7 +4556,7 @@ void TabPrinter::toggle_options()
                "wipe_distance"};
         for (auto el : vec)
             //BBS
-            toggle_option(el, retraction && !use_firmware_retraction, i);
+            toggle_line(el, retraction && !use_firmware_retraction, i);
 
         bool wipe = retraction && m_config->opt_bool("wipe", i);
         toggle_option("retract_before_wipe", wipe, i);
