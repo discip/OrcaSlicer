@@ -3757,7 +3757,7 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionFloats { 10. });
 
     def = this->add("z_hop", coFloats);
-    def->label = L("Z hop when retract");
+    def->label = L("Z hop height");
     def->tooltip = L("Whenever the retraction is done, the nozzle is lifted a little to create clearance between nozzle and the print. "
                      "It prevents nozzle from hitting the print when travel move. "
                      "Using spiral line to lift z can prevent stringing");
