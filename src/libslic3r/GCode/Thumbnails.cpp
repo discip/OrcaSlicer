@@ -178,53 +178,37 @@ std::unique_ptr<CompressedImageBuffer> compress_thumbnail_colpic(const Thumbnail
 }
 
 std::unique_ptr<CompressedImageBuffer> compress_thumbnail_btt_tft(const ThumbnailData &data) {
-
     // Take vector of RGBA pixels and flip the image vertically
-    std::vector<unsigned char> rgba_pixels(data.pixels.size());
-    const unsigned int row_size = data.width * 4;
-    for (unsigned int y = 0; y < data.height; ++y) {
+    std::vector<uint8_t> rgba_pixels(data.pixels.size());
+    const size_t row_size = data.width * 4;
+    for (size_t y = 0; y < data.height; ++y)
         ::memcpy(rgba_pixels.data() + (data.height - y - 1) * row_size, data.pixels.data() + y * row_size, row_size);
-    }
 
     auto out = std::make_unique<CompressedBIQU>();
-
-    // get the output size of the data
-    // add 4 bytes to the row_size to account for end of line (\r\n)
-    // add 1 byte for the 0 of the c_str
-    out->size = data.height * (row_size + 4) + 1;
+    //size: height is number of lines. Add 2 byte to each line for the ';' and '\n'. Each pixel is 4 byte, +1 for the 0 of the c_str
+    out->size = data.height * (2 + data.width * 4) + 1;
     out->data = malloc(out->size);
 
-    std::stringstream out_data;
-    typedef struct {unsigned char r, g, b, a;} pixel;
-    pixel px;
-    for (unsigned int ypos = 0; ypos < data.height; ypos++) {
-        std::stringstream line;
-        line << ";";
-        for (unsigned int xpos = 0; xpos < row_size; xpos+=4) {
-            px.r = rgba_pixels[ypos * row_size + xpos];
-            px.g = rgba_pixels[ypos * row_size + xpos + 1];
-            px.b = rgba_pixels[ypos * row_size + xpos + 2];
-            px.a = rgba_pixels[ypos * row_size + xpos + 3];
-
-            // calculate values for RGB with alpha
-            const uint8_t rv = ((px.a * px.r) / 255);
-            const uint8_t gv = ((px.a * px.g) / 255);
-            const uint8_t bv = ((px.a * px.b) / 255);
-
-            // convert the RGB values to RGB565 hex that is right justified (same algorithm BTT firmware uses)
-            auto color_565 = rjust(get_hex(((rv >> 3) << 11) | ((gv >> 2) << 5) | (bv >> 3)), 4, '0');
-
-            //BTT original converter specifies these values should be '0000'
-            if (color_565 == "0020" || color_565 == "0841" || color_565 == "0861")
-                color_565 = "0000";
-            //add the color to the line
-            line << color_565;
+    int idx = 0;
+    std::stringstream tohex;
+    tohex << std::setfill('0') << std::hex;
+    for (size_t y = 0; y < data.height; ++y) {
+        tohex << ";";
+        for (size_t x = 0; x < data.width; ++x) {
+            uint16_t pixel = 0;
+            //r
+            pixel |= uint16_t((rgba_pixels[y * row_size + x * 4 + 0 ] & 0x000000F8) >> 3);
+            //g
+            pixel |= uint16_t((rgba_pixels[y * row_size + x * 4 + 1 ] & 0x000000FC) << 3);
+            //b
+            pixel |= uint16_t((rgba_pixels[y * row_size + x * 4 + 2 ] & 0x000000F8) << 8);
+            tohex << std::setw(4) << pixel;
         }
-        // output line and end line (\r\n is important. BTT firmware requires it)
-        out_data << line.str() << "\r\n";
-        line.clear();
+        tohex << "\r\n";
     }
-    ::memcpy(out->data, (const void*) out_data.str().c_str(), out->size);
+    std::string str = tohex.str();
+    assert(str.size() + 1 == out->size);
+    ::memcpy(out->data, (const void*)str.c_str(), out->size);
     return out;
 }
 
