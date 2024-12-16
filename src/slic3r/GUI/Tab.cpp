@@ -3335,7 +3335,12 @@ void TabFilament::build()
         optgroup->append_line(line);
 
         optgroup = page->new_optgroup(L("Bed temperature"), L"param_bed_temp");
-        line = { L("Cool plate"), L("Bed temperature when cool plate is installed. Value 0 means the filament does not support to print on the Cool Plate") };
+        line = {L("Bambu Cool Plate SuperTack"), L("Bed temperature when cool plate is installed. Value 0 means the filament does not support to print on the Bambu Cool Plate SuperTack")};
+        line.append_option(optgroup->get_option("supertack_plate_temp_initial_layer"));
+        line.append_option(optgroup->get_option("supertack_plate_temp"));
+        optgroup->append_line(line);
+
+        line = { L("Cool Plate / PLA Plate"), L("Bed temperature when cool plate is installed. Value 0 means the filament does not support to print on the Cool Plate") };
         line.append_option(optgroup->get_option("cool_plate_temp_initial_layer"));
         line.append_option(optgroup->get_option("cool_plate_temp"));
         optgroup->append_line(line);
@@ -3625,6 +3630,12 @@ void TabFilament::toggle_options()
         bool is_pellet_printer = cfg.opt_bool("pellet_modded_printer");
         toggle_line("pellet_flow_coefficient", is_pellet_printer);
         toggle_line("filament_diameter", !is_pellet_printer);
+
+        bool support_chamber_temp_control = this->m_preset_bundle->printers.get_edited_preset().config.opt_bool("support_chamber_temp_control");
+        toggle_line("chamber_temperatures", support_chamber_temp_control);
+
+        for (auto el : {"supertack_plate_temp", "supertack_plate_temp_initial_layer", "cool_plate_temp", "cool_plate_temp_initial_layer", "eng_plate_temp", "eng_plate_temp_initial_layer", "textured_plate_temp", "textured_plate_temp_initial_layer"})
+            toggle_line(el, is_BBL_printer);
     }
     if (m_active_page->title() == L("Setting Overrides"))
         update_filament_overrides_page(&cfg);
@@ -4331,7 +4342,7 @@ if (is_marlin_flavor)
                 optgroup->append_single_option_line("wipe_distance", "", extruder_idx);
                 optgroup->append_single_option_line("retract_before_wipe", "", extruder_idx);
 
-                optgroup = page->new_optgroup(L("Z Hop"), L"param_extruder_lift_enforcement");
+                optgroup = page->new_optgroup(L("Z-Hop"), L"param_extruder_lift_enforcement");
                 optgroup->append_single_option_line("retract_lift_enforce", "", extruder_idx);
                 optgroup->append_single_option_line("z_hop_types", "", extruder_idx);
                 optgroup->append_single_option_line("z_hop", "", extruder_idx);
@@ -5104,8 +5115,14 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
 
         // Orca: update presets for the selected printer
         if (m_type == Preset::TYPE_PRINTER && wxGetApp().app_config->get_bool("remember_printer_config")) {
-          m_preset_bundle->update_selections(*wxGetApp().app_config);
-          wxGetApp().plater()->sidebar().on_filaments_change(m_preset_bundle->filament_presets.size());
+            m_preset_bundle->update_selections(*wxGetApp().app_config);
+            int extruders_count = m_preset_bundle->printers.get_edited_preset().config.opt<ConfigOptionFloats>("nozzle_diameter")->values.size();
+            if (extruders_count > 1) {
+                // multi tool
+                wxGetApp().plater()->sidebar().on_filaments_change(extruders_count);
+            } else {
+                wxGetApp().plater()->sidebar().on_filaments_change(m_preset_bundle->filament_presets.size());
+            }
         }
         load_current_preset();
 
@@ -6087,8 +6104,9 @@ void Page::update_visibility(ConfigOptionMode mode, bool update_contolls_visibil
 #ifdef __WXMSW__
     if (!m_show) return;
     // BBS: fix field control position
-    wxTheApp->CallAfter([this]() {
-        for (auto group : m_optgroups) {
+    auto groups = this->m_optgroups;
+    wxTheApp->CallAfter([groups]() {
+        for (auto group : groups) {
             if (group->custom_ctrl) group->custom_ctrl->fixup_items_positions();
         }
     });
