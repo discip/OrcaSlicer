@@ -539,7 +539,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
         "sparse_infill_speed", "bridge_speed", "internal_bridge_speed", "bridge_angle","solid_infill_direction", "rotate_solid_infill_direction"})
         toggle_line(el, have_infill || has_solid_infill);
 
-    toggle_line("filter_out_gap_fill", config->opt_enum<GapFill>("gap_fill_target") != gftNowhere);
+    toggle_line("filter_out_gap_fill", config->opt_enum<GapFillTarget>("gap_fill_target") != gftNowhere);
     
     toggle_line("top_shell_thickness", ! has_spiral_vase && has_top_solid_infill);
     toggle_line("bottom_shell_thickness", ! has_spiral_vase && has_bottom_solid_infill);
