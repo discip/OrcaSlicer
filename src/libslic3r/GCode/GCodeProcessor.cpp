@@ -5020,7 +5020,10 @@ void GCodeProcessor::run_post_process()
                 gcode_line.insert(gcode_line.end(), it, it_end);
                 if (eol) {
                     ++line_id;
-                    gcode_line += "\n";
+                    // determine the end of line character and pass to output
+                    gcode_line += *it_end;
+                    if(*it_end == '\r' && *(++ it_end) == '\n')
+                        gcode_line += '\n';
                     const unsigned int internal_g1_lines_counter = export_lines.update(gcode_line, line_id, g1_lines_counter);
                     // replace placeholder lines
                     bool processed = process_placeholders(gcode_line);
