@@ -109,6 +109,13 @@ jobs:
           name: OrcaSlicer_Windows_${{ env.ver }}_portable
 	  path: ${{ github.workspace }}/build/OrcaSlicer
 
+      - name: Upload artifacts Win installer
+        if: inputs.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrcaSlicer_Windows_${{ env.ver }}
+          path: ${{ github.workspace }}/build/OrcaSlicer*.exe
+
       - name: Deploy Windows release portable
         if: github.ref == 'refs/heads/main' && inputs.os == 'windows-latest'
         uses: WebFreak001/deploy-nightly@v3.1.0
