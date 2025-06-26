@@ -3,7 +3,7 @@ name: Build all
 on:
   push:
     branches:
-     - main
+     - test
      - release/*
     paths:
      - 'deps/**'
@@ -53,8 +53,6 @@ jobs:
           # - os: ubuntu-20.04
           - os: ubuntu-24.04
           - os: windows-latest
-          - os: macos-14
-            arch: arm64
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ matrix.os }}
@@ -76,8 +74,6 @@ jobs:
         variant:
           - arch: x86_64
             runner: ubuntu-24.04
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.variant.runner }}
     env:
       date:
