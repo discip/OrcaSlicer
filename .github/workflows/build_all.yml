@@ -30,8 +30,8 @@ on:
      - 'build_release_macos.sh'
      - 'scripts/flatpak/**'
 
-  schedule:
-      - cron: '35 7 * * *' # run once a day near midnight US Pacific time
+#  schedule:
+#      - cron: '35 7 * * *' # run once a day near midnight US Pacific time
 
   workflow_dispatch: # allows for manual dispatch
     inputs:
@@ -129,3 +129,4 @@ jobs:
         asset_name: OrcaSlicer-Linux-flatpak_nightly_${{ matrix.variant.arch }}.flatpak
         asset_content_type: application/octet-stream
         max_releases: 1 # optional, if there are more releases than this matching the asset_name, the oldest ones are going to be deleted
+
