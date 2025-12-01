@@ -608,7 +608,7 @@ std::pair<size_t, size_t> find_previous_and_next_perimeter_point(const std::vect
 
   if (point_index == current.perimeter.start_index) {
     // if point_index is equal to start, it means that the previous neighbour is at the end
-    prev = current.perimeter.end_index;
+    prev = current.perimeter.end_index - 1;
   }
 
   if (point_index == current.perimeter.end_index - 1) {
