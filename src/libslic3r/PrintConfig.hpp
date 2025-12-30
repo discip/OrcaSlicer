@@ -874,6 +874,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     PrintObjectConfig,
 
     ((ConfigOptionFloat,               brim_object_gap))
+    ((ConfigOptionBool,                brim_use_efc_outline))
     ((ConfigOptionEnum<BrimType>,      brim_type))
     ((ConfigOptionFloat,               brim_width))
     ((ConfigOptionFloat,               brim_ears_detection_length))
@@ -1271,6 +1272,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionIntsNullable,        filament_flush_temp))
     // BBS
     ((ConfigOptionBool,                scan_first_layer))
+    ((ConfigOptionBool,                enable_power_loss_recovery))
     ((ConfigOptionBool,                enable_wrapping_detection))
     ((ConfigOptionInt,                 wrapping_detection_layers))
     ((ConfigOptionPoints,              wrapping_exclude_area))
