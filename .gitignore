@@ -37,6 +37,7 @@ src/OrcaSlicer-doc/
 /deps/DL_CACHE
 **/.flatpak-builder/
 *.no-debug.yml
+*.local-build.yml
 resources/profiles/user/default
 *.code-workspace
 deps_src/build/

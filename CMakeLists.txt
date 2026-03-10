@@ -88,29 +88,62 @@ else ()
     add_compile_definitions("BBL_RELEASE_TO_PUBLIC=$<CONFIG:Release>")
 endif ()
 
-find_package(Git)
-if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
-    if(DEFINED ENV{git_commit_hash} AND NOT "$ENV{git_commit_hash}" STREQUAL "")
-        message(STATUS "Specified git commit hash: $ENV{git_commit_hash}")
+# --- Build identity: explicit cache variables take top priority ---
+# Allows Flatpak / sandboxed builds (no .git) to inject metadata at configure time.
+set(ORCA_BUILD_ID    "" CACHE STRING "Explicit build ID (e.g. V2.3.0 or PR-42). Overrides env/auto-detection.")
+set(ORCA_COMMIT_HASH "" CACHE STRING "Explicit short commit hash. Overrides env/auto-detection.")
 
-        # Convert the given hash to short hash
-        execute_process(
-            COMMAND ${GIT_EXECUTABLE} rev-parse --short "$ENV{git_commit_hash}"
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-            OUTPUT_VARIABLE GIT_COMMIT_HASH
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-        add_definitions("-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\"")
+# Resolve commit hash with precedence:
+#   1. explicit -DORCA_COMMIT_HASH=...
+#   2. env git_commit_hash
+#   3. .git lookup via Git
+#   4. fallback "unknown"
+if(NOT ORCA_COMMIT_HASH STREQUAL "")
+    set(GIT_COMMIT_HASH "${ORCA_COMMIT_HASH}")
+    message(STATUS "Using explicit ORCA_COMMIT_HASH: ${GIT_COMMIT_HASH}")
+elseif(DEFINED ENV{git_commit_hash} AND NOT "$ENV{git_commit_hash}" STREQUAL "")
+    # Trim to short hash (first 7 chars) without requiring .git
+    string(LENGTH "$ENV{git_commit_hash}" _hash_len)
+    if(_hash_len GREATER 7)
+        string(SUBSTRING "$ENV{git_commit_hash}" 0 7 GIT_COMMIT_HASH)
     else()
-        # Check current Git commit hash
+        set(GIT_COMMIT_HASH "$ENV{git_commit_hash}")
+    endif()
+    message(STATUS "Using env git_commit_hash (short): ${GIT_COMMIT_HASH}")
+else()
+    find_package(Git QUIET)
+    if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
         execute_process(
             COMMAND ${GIT_EXECUTABLE} log -1 --format=%h
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             OUTPUT_VARIABLE GIT_COMMIT_HASH
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        add_definitions("-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\"")
+        message(STATUS "Resolved GIT_COMMIT_HASH from .git: ${GIT_COMMIT_HASH}")
+    else()
+        set(GIT_COMMIT_HASH "unknown")
+        message(STATUS "GIT_COMMIT_HASH not resolvable; falling back to: ${GIT_COMMIT_HASH}")
     endif()
+endif()
+add_definitions("-DGIT_COMMIT_HASH=\"${GIT_COMMIT_HASH}\"")
+
+# Resolve build ID with precedence:
+#   1. explicit -DORCA_BUILD_ID=...
+#   2. env ORCA_BUILD_ID
+#   3. fallback V<version>
+if(NOT ORCA_BUILD_ID STREQUAL "")
+    set(SLIC3R_BUILD_ID "${ORCA_BUILD_ID}")
+    message(STATUS "Using explicit ORCA_BUILD_ID: ${SLIC3R_BUILD_ID}")
+elseif(DEFINED ENV{ORCA_BUILD_ID} AND NOT "$ENV{ORCA_BUILD_ID}" STREQUAL "")
+    set(SLIC3R_BUILD_ID "$ENV{ORCA_BUILD_ID}")
+    message(STATUS "Using env ORCA_BUILD_ID: ${SLIC3R_BUILD_ID}")
+else()
+    set(SLIC3R_BUILD_ID "V${SoftFever_VERSION}")
+    message(STATUS "Derived SLIC3R_BUILD_ID from version: ${SLIC3R_BUILD_ID}")
+endif()
+
+if(SLIC3R_BUILD_ID STREQUAL "")
+    message(FATAL_ERROR "SLIC3R_BUILD_ID resolved to empty. Pass -DORCA_BUILD_ID=<value> or set the ORCA_BUILD_ID env var.")
 endif()
 
 if(DEFINED ENV{SLIC3R_STATIC})

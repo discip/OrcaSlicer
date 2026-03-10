@@ -290,7 +290,9 @@ modules:
           -DFLATPAK=ON \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_PREFIX_PATH=/app \
-          -DCMAKE_INSTALL_PREFIX=/app
+          -DCMAKE_INSTALL_PREFIX=/app \
+          -DORCA_BUILD_ID=unknown \
+          -DORCA_COMMIT_HASH=unknown
       - cmake --build build_flatpak --target OrcaSlicer -j$FLATPAK_BUILDER_N_JOBS
       - ./scripts/run_gettext.sh
       - cmake --build build_flatpak --target install -j$FLATPAK_BUILDER_N_JOBS

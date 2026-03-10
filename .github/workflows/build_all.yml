@@ -168,14 +168,19 @@ jobs:
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
           ver="PR-${{ github.event.number }}"
           git_commit_hash="${{ github.event.pull_request.head.sha }}"
+          orca_build_id="PR-${{ github.event.number }}"
         else
           ver=V$ver_pure
-          git_commit_hash=""
+          git_commit_hash="${{ github.sha }}"
+          orca_build_id="V$ver_pure"
         fi
+        git_commit_short="${git_commit_hash:0:7}"
         echo "ver=$ver" >> $GITHUB_ENV
         echo "ver_pure=$ver_pure" >> $GITHUB_ENV
         echo "date=$(date +'%Y%m%d')" >> $GITHUB_ENV
         echo "git_commit_hash=$git_commit_hash" >> $GITHUB_ENV
+        echo "orca_build_id=$orca_build_id" >> $GITHUB_ENV
+        echo "git_commit_short=$git_commit_short" >> $GITHUB_ENV
       shell: bash
     # Manage flatpak-builder cache externally so PRs restore but never upload
     - name: Restore flatpak-builder cache
@@ -195,6 +200,15 @@ jobs:
     - name: Disable debug info for faster CI builds
       run: |
         sed -i '0,/^finish-args:/s//build-options:\n  no-debuginfo: true\n  strip: true\nfinish-args:/' \
+          scripts/flatpak/io.github.orcaslicer.OrcaSlicer.yml
+      shell: bash
+    - name: Inject build metadata into Flatpak manifest
+      run: |
+        sed -i \
+          "s|-DORCA_BUILD_ID=unknown|-DORCA_BUILD_ID=${{ env.orca_build_id }}|g" \
+          scripts/flatpak/io.github.orcaslicer.OrcaSlicer.yml
+        sed -i \
+          "s|-DORCA_COMMIT_HASH=unknown|-DORCA_COMMIT_HASH=${{ env.git_commit_short }}|g" \
           scripts/flatpak/io.github.orcaslicer.OrcaSlicer.yml
       shell: bash
     - uses: flatpak/flatpak-github-actions/flatpak-builder@master

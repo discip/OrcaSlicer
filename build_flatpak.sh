@@ -230,6 +230,28 @@ else
     exit 1
 fi
 
+# Resolve build metadata (mirrors CMakeLists.txt precedence rules)
+# ORCA_BUILD_ID: env var > V<version> fallback
+if [[ -n "${ORCA_BUILD_ID:-}" ]]; then
+    BUILD_ID="$ORCA_BUILD_ID"
+    echo -e "Build ID (from env): ${GREEN}$BUILD_ID${NC}"
+else
+    BUILD_ID="$VER"
+    echo -e "Build ID (from version): ${GREEN}$BUILD_ID${NC}"
+fi
+
+# ORCA_COMMIT_HASH: env var > local git > "unknown"
+if [[ -n "${ORCA_COMMIT_HASH:-}" ]]; then
+    COMMIT_HASH="$ORCA_COMMIT_HASH"
+    echo -e "Commit hash (from env): ${GREEN}$COMMIT_HASH${NC}"
+elif command -v git &> /dev/null && git rev-parse --is-inside-work-tree &> /dev/null; then
+    COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    echo -e "Commit hash (from git): ${GREEN}$COMMIT_HASH${NC}"
+else
+    COMMIT_HASH="unknown"
+    echo -e "Commit hash: ${YELLOW}$COMMIT_HASH (no git available)${NC}"
+fi
+
 # Cleanup build directory if requested
 if [[ "$CLEANUP" == true ]]; then
     echo -e "${YELLOW}Cleaning up flatpak-specific build directories...${NC}"
@@ -314,14 +336,33 @@ if [[ "$DISABLE_ROFILES_FUSE" == true ]]; then
     echo -e "${YELLOW}rofiles-fuse disabled${NC}"
 fi
 
-# Use a temp manifest with no-debuginfo if requested
+# Use a temp manifest with no-debuginfo and/or build metadata injected
 MANIFEST="scripts/flatpak/io.github.orcaslicer.OrcaSlicer.yml"
+TEMP_MANIFEST="scripts/flatpak/io.github.orcaslicer.OrcaSlicer.local-build.yml"
+
+# Always generate a temp manifest so we can safely inject metadata
+cp scripts/flatpak/io.github.orcaslicer.OrcaSlicer.yml "$TEMP_MANIFEST"
+
 if [[ "$NO_DEBUGINFO" == true ]]; then
-    MANIFEST="scripts/flatpak/io.github.orcaslicer.OrcaSlicer.no-debug.yml"
-    sed '0,/^finish-args:/s//build-options:\n  no-debuginfo: true\n  strip: true\nfinish-args:/' \
-        scripts/flatpak/io.github.orcaslicer.OrcaSlicer.yml > "$MANIFEST"
-    echo -e "${YELLOW}Debug info disabled (using temp manifest)${NC}"
+    sed -i '0,/^finish-args:/s//build-options:\n  no-debuginfo: true\n  strip: true\nfinish-args:/' \
+        "$TEMP_MANIFEST"
+    echo -e "${YELLOW}Debug info disabled in temp manifest${NC}"
 fi
+
+# Inject resolved build metadata into the cmake invocation
+# Escape sed replacement special chars in metadata values
+BUILD_ID_ESC="${BUILD_ID//\\/\\\\}"
+BUILD_ID_ESC="${BUILD_ID_ESC//&/\\&}"
+COMMIT_HASH_ESC="${COMMIT_HASH//\\/\\\\}"
+COMMIT_HASH_ESC="${COMMIT_HASH_ESC//&/\\&}"
+sed -i \
+    "s|-DORCA_BUILD_ID=unknown|-DORCA_BUILD_ID=${BUILD_ID_ESC}|g" \
+    "$TEMP_MANIFEST"
+sed -i \
+    "s|-DORCA_COMMIT_HASH=unknown|-DORCA_COMMIT_HASH=${COMMIT_HASH_ESC}|g" \
+    "$TEMP_MANIFEST"
+echo -e "${GREEN}Build metadata injected into temp manifest (Build ID: $BUILD_ID, Commit: $COMMIT_HASH)${NC}"
+MANIFEST="$TEMP_MANIFEST"
 
 if ! flatpak-builder \
     "${BUILDER_ARGS[@]}" \
@@ -329,12 +370,12 @@ if ! flatpak-builder \
     "$MANIFEST"; then
     echo -e "${RED}Error: flatpak-builder failed${NC}"
     echo -e "${YELLOW}Check the build log above for details${NC}"
-    rm -f "scripts/flatpak/io.github.orcaslicer.OrcaSlicer.no-debug.yml"
+    rm -f "$TEMP_MANIFEST"
     exit 1
 fi
 
 # Clean up temp manifest
-rm -f "scripts/flatpak/io.github.orcaslicer.OrcaSlicer.no-debug.yml"
+rm -f "$TEMP_MANIFEST"
 
 # Create bundle
 echo -e "${YELLOW}Creating Flatpak bundle...${NC}"
