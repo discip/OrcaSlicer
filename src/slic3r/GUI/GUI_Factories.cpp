@@ -576,38 +576,13 @@ wxMenu* MenuFactory::append_submenu_add_generic(wxMenu* menu, ModelVolumeType ty
 wxMenu* MenuFactory::append_submenu_add_handy_model(wxMenu* menu, ModelVolumeType type) {
     auto sub_menu = new wxMenu;
 
-<<<<<<< HEAD
-    for (auto &item : {L("Orca Cube"), L("Orca Tolerance Test"), L("3DBenchy"), L("Cali Cat"), L("Autodesk FDM Test"),
-                       L("Voron Cube"), L("Stanford Bunny"), L("Orca String Test") }) {
-=======
     for (auto &item : {L("Orca Cube"), L("OrcaSliced Combo"), L("Orca Tolerance Test"), L("3DBenchy"), L("Cali Cat"), L("Autodesk FDM Test"),
-                       L("Voron Cube"), L("Stanford Bunny"), L("Orca String Hell") }) {
->>>>>>> origin/main
+                       L("Voron Cube"), L("Stanford Bunny"), L("Orca String Test") }) {
         append_menu_item(
             sub_menu, wxID_ANY, _(item), "",
             [type, item](wxCommandEvent&) {
                 std::vector<boost::filesystem::path> input_files;
-<<<<<<< HEAD
                 bool                                 is_stringtest = false;
-                std::string                          file_name     = item;
-                if (file_name == L("Orca Cube"))
-                    file_name = "OrcaCube_v2.3mf";
-                else if (file_name == L("Orca Tolerance Test"))
-                    file_name = "OrcaToleranceTest.stl";
-                else if (file_name == L("3DBenchy"))
-                    file_name = "3DBenchy.3mf";
-                else if (file_name == L("Cali Cat"))
-                    file_name = "calicat.stl";
-                else if (file_name == L("Autodesk FDM Test"))
-                    file_name = "ksr_fdmtest_v4.3mf";
-                else if (file_name == L("Voron Cube"))
-                    file_name = "Voron_Design_Cube_v7.3mf";
-                else if (file_name == L("Stanford Bunny"))
-                    file_name = "Stanford_Bunny.3mf";
-                else if (file_name == L("Orca String Test")) {
-                    file_name     = "Orca_stringtest.3mf";
-=======
-                bool                                 is_stringhell = false;
                 std::vector<std::string>             file_names;
                 bool                                 arrange_after_import = false;
                 if (item == L("Orca Cube")){
@@ -631,10 +606,9 @@ wxMenu* MenuFactory::append_submenu_add_handy_model(wxMenu* menu, ModelVolumeTyp
                     file_names = { "Voron_Design_Cube_v7.drc" };
                 else if (item == L("Stanford Bunny"))
                     file_names = { "Stanford_Bunny.drc" };
-                else if (item == L("Orca String Hell")) {
-                    file_names   = { "Orca_stringhell.drc" };
->>>>>>> origin/main
-                    is_stringhell = true;
+                else if (item == L("Orca String Test")) {
+                    file_names   = { "Orca_stringtest.drc" };
+                    is_stringtest = true;
                 } else
                     return;
 
