@@ -298,11 +298,7 @@ void AMSMaterialsSetting::create_panel_kn(wxWindow* parent)
     if (language.find("zh") == 0)
         region = "zh";
     wxString link_url = wxString::Format("https://wiki.bambulab.com/%s/software/bambu-studio/calibration_pa", region);
-    m_wiki_ctrl = new wxHyperlinkCtrl(parent, wxID_ANY, "Wiki", link_url);
-    m_wiki_ctrl->SetNormalColour(*wxBLUE);
-    m_wiki_ctrl->SetHoverColour(wxColour(0, 0, 200));
-    m_wiki_ctrl->SetVisitedColour(*wxBLUE);
-    m_wiki_ctrl->SetFont(Label::Head_14);
+    m_wiki_ctrl = new HyperLink(parent, "Wiki Guide", link_url);
     cali_title_sizer->Add(m_ratio_text, 0, wxALIGN_CENTER_VERTICAL);
     cali_title_sizer->Add(m_wiki_ctrl, 0, wxALIGN_CENTER_VERTICAL);
 
@@ -867,7 +863,15 @@ void AMSMaterialsSetting::Popup(wxString filament, wxString sn, wxString temp_mi
     std::set<std::string> filament_id_set;
     PresetBundle *        preset_bundle = wxGetApp().preset_bundle;
     std::ostringstream    stream;
-    stream << std::fixed << std::setprecision(1) << obj->GetExtderSystem()->GetNozzleDiameter(0);
+    // Defensive: this dialog is opened only from StatusPanel (BBL-only) today, so the fallback fires
+    // only during the brief BBL startup window before firmware reports nozzle info. Without this,
+    // the "0.0" lookup string returns an empty set and the filament dropdown goes blank.
+    float machine_diameter = obj->GetExtderSystem()->GetNozzleDiameter(0);
+    if (machine_diameter == 0.0f && preset_bundle) {
+        const ConfigOption *opt = preset_bundle->printers.get_selected_preset().config.option("nozzle_diameter");
+        if (opt) machine_diameter = static_cast<const ConfigOptionFloats *>(opt)->values[0];
+    }
+    stream << std::fixed << std::setprecision(1) << machine_diameter;
     std::string nozzle_diameter_str = stream.str();
     std::set<std::string> printer_names = preset_bundle->get_printer_names_by_printer_type_and_nozzle(DevPrinterConfigUtil::get_printer_display_name(obj->printer_type), nozzle_diameter_str);
 
@@ -1105,8 +1109,17 @@ void AMSMaterialsSetting::on_select_filament(wxCommandEvent &evt)
     PresetBundle* preset_bundle = wxGetApp().preset_bundle;
     if (preset_bundle) {
         std::ostringstream stream;
-        if (obj)
-            stream << std::fixed << std::setprecision(1) << obj->GetExtderSystem()->GetNozzleDiameter(0);
+        if (obj) {
+            // Defensive: this dialog is opened only from StatusPanel (BBL-only) today, so the fallback fires
+            // only during the brief BBL startup window before firmware reports nozzle info. Without this,
+            // the "0.0" lookup string returns an empty set and filament lookup yields no results.
+            float machine_diameter = obj->GetExtderSystem()->GetNozzleDiameter(0);
+            if (machine_diameter == 0.0f) {
+                const ConfigOption *opt = preset_bundle->printers.get_selected_preset().config.option("nozzle_diameter");
+                if (opt) machine_diameter = static_cast<const ConfigOptionFloats *>(opt)->values[0];
+            }
+            stream << std::fixed << std::setprecision(1) << machine_diameter;
+        }
         std::string nozzle_diameter_str = stream.str();
         std::set<std::string> printer_names = preset_bundle->get_printer_names_by_printer_type_and_nozzle(DevPrinterConfigUtil::get_printer_display_name(obj->printer_type),
                                                                                                           nozzle_diameter_str);
