@@ -6,6 +6,8 @@
 #include "../enum_bitmask.hpp"
 #include "ThumbnailData.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -35,8 +37,16 @@ struct CompressedImageBuffer
 
 std::string get_hex(const unsigned int input);
 std::string rjust(std::string input, unsigned int width, char fill_char);
-std::unique_ptr<CompressedImageBuffer> compress_thumbnail(const ThumbnailData &data, GCodeThumbnailsFormat format);
+std::unique_ptr<CompressedImageBuffer> compress_thumbnail(const ThumbnailData &data, GCodeThumbnailsFormat format, unsigned int supersampling = 1);
 std::string get_error_string(const ThumbnailErrors& errors);
+
+// BTT_TFT thumbnails are rendered this many times larger than requested and then averaged down.
+// The factor is the same for width and height, so the proportions do not change; the edges get smooth.
+inline unsigned int btt_tft_supersampling(const Vec2d &size)
+{
+    const double longest_side = std::max(std::round(size.x()), std::round(size.y()));
+    return longest_side < 1. ? 1u : unsigned(std::clamp(std::floor(1024. / longest_side), 1., 4.));
+}
 
 
 typedef std::vector<std::pair<GCodeThumbnailsFormat, Vec2d>> GCodeThumbnailDefinitionsList;
@@ -58,14 +68,16 @@ inline void export_thumbnails_to_file(ThumbnailsGeneratorCallback&              
     bool first_ColPic = true;
     for (const auto& [format, size] : thumbnails_list) {
         static constexpr const size_t max_row_length = 78;
-        ThumbnailsList                thumbnails     = thumbnail_cb(ThumbnailsParams{{size}, true, true, true, true, plate_id});
+        const unsigned int            supersampling  = format == GCodeThumbnailsFormat::BTT_TFT ? btt_tft_supersampling(size) : 1;
+        const Vec2d                   render_size(std::round(size.x()) * supersampling, std::round(size.y()) * supersampling);
+        ThumbnailsList                thumbnails     = thumbnail_cb(ThumbnailsParams{{render_size}, true, true, true, true, plate_id});
         for (const ThumbnailData &data : thumbnails) {
             if (data.is_valid()) {
-                auto compressed = compress_thumbnail(data, format);
+                auto compressed = compress_thumbnail(data, format, supersampling);
                 if (compressed->data && compressed->size) {
                     if (format == GCodeThumbnailsFormat::BTT_TFT) {
-                        // write BTT_TFT header
-                        output((";" + rjust(get_hex(data.width), 4, '0') + rjust(get_hex(data.height), 4, '0') + "\r\n").c_str());
+                        // write BTT_TFT header (size of the image after averaging down)
+                        output((";" + rjust(get_hex(data.width / supersampling), 4, '0') + rjust(get_hex(data.height / supersampling), 4, '0') + "\r\n").c_str());
                         output((char *) compressed->data);
                         if (i == (thumbnails_list.size() - 1))
                             output("; bigtree thumbnail end\r\n\r\n");

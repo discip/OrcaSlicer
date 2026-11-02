@@ -9,6 +9,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <qoi/qoi.h>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <cstddef>
@@ -193,39 +194,42 @@ std::unique_ptr<CompressedImageBuffer> compress_thumbnail_colpic(const Thumbnail
     return out;
 }
 
-std::unique_ptr<CompressedImageBuffer> compress_thumbnail_btt_tft(const ThumbnailData &data) {
-
-    // Take vector of RGBA pixels and flip the image vertically
-    std::vector<unsigned char> rgba_pixels(data.pixels.size());
-    const unsigned int row_size = data.width * 4;
-    for (unsigned int y = 0; y < data.height; ++y) {
-        ::memcpy(rgba_pixels.data() + (data.height - y - 1) * row_size, data.pixels.data() + y * row_size, row_size);
-    }
+std::unique_ptr<CompressedImageBuffer> compress_thumbnail_btt_tft(const ThumbnailData &data, unsigned int supersampling) {
 
     auto out = std::make_unique<CompressedBIQU>();
 
-    // get the output size of the data
-    // add 4 bytes to the row_size to account for end of line (\r\n)
-    // add 1 byte for the 0 of the c_str
-    out->size = data.height * (row_size + 4) + 1;
-    out->data = malloc(out->size);
+    // The image was rendered "supersampling" times larger than the requested size. Every block of
+    // supersampling x supersampling pixels becomes one output pixel. The same factor is used for
+    // width and height, so the proportions are not changed.
+    const unsigned int ss         = std::max(supersampling, 1u);
+    const unsigned int out_width  = data.width / ss;
+    const unsigned int out_height = data.height / ss;
+    if (out_width == 0 || out_height == 0 || data.pixels.size() < size_t(data.width) * data.height * 4)
+        return out; // empty buffer, nothing gets written
 
     std::stringstream out_data;
-    typedef struct {unsigned char r, g, b, a;} pixel;
-    pixel px;
-    for (unsigned int ypos = 0; ypos < data.height; ypos++) {
+    for (unsigned int ypos = 0; ypos < out_height; ypos++) {
         std::stringstream line;
         line << ";";
-        for (unsigned int xpos = 0; xpos < row_size; xpos+=4) {
-            px.r = rgba_pixels[ypos * row_size + xpos];
-            px.g = rgba_pixels[ypos * row_size + xpos + 1];
-            px.b = rgba_pixels[ypos * row_size + xpos + 2];
-            px.a = rgba_pixels[ypos * row_size + xpos + 3];
-
-            // calculate values for RGB with alpha
-            const uint8_t rv = ((px.a * px.r) / 255);
-            const uint8_t gv = ((px.a * px.g) / 255);
-            const uint8_t bv = ((px.a * px.b) / 255);
+        // the OpenGL image is bottom-up, so the first output row is made of the last rows of it
+        const unsigned int src_y = data.height - (ypos + 1) * ss;
+        for (unsigned int xpos = 0; xpos < out_width; xpos++) {
+            // Average the block with the colors weighted by alpha (the same as the BTT python
+            // converter does), so the transparent pixels around the model do not darken the edges.
+            uint64_t sum_a = 0, sum_r = 0, sum_g = 0, sum_b = 0;
+            for (unsigned int y = src_y; y < src_y + ss; y++) {
+                const unsigned char *px = data.pixels.data() + (size_t(y) * data.width + size_t(xpos) * ss) * 4;
+                for (unsigned int x = 0; x < ss; x++, px += 4) {
+                    sum_r += px[0] * px[3];
+                    sum_g += px[1] * px[3];
+                    sum_b += px[2] * px[3];
+                    sum_a += px[3];
+                }
+            }
+            auto average = [sum_a](uint64_t sum) -> uint8_t { return sum_a == 0 ? 0 : (sum + sum_a / 2) / sum_a; };
+            const uint8_t rv = average(sum_r);
+            const uint8_t gv = average(sum_g);
+            const uint8_t bv = average(sum_b);
 
             // convert the RGB values to RGB565 hex that is right justified (same algorithm BTT firmware uses)
             auto color_565 = rjust(get_hex(((rv >> 3) << 11) | ((gv >> 2) << 5) | (bv >> 3)), 4, '0');
@@ -238,9 +242,13 @@ std::unique_ptr<CompressedImageBuffer> compress_thumbnail_btt_tft(const Thumbnai
         }
         // output line and end line (\r\n is important. BTT firmware requires it)
         out_data << line.str() << "\r\n";
-        line.clear();
     }
-    ::memcpy(out->data, (const void*) out_data.str().c_str(), out->size);
+
+    // add 1 byte for the 0 of the c_str
+    const std::string result = out_data.str();
+    out->size = result.size() + 1;
+    out->data = malloc(out->size);
+    ::memcpy(out->data, result.c_str(), out->size);
     return out;
 }
 
@@ -258,7 +266,7 @@ std::string rjust(std::string input, unsigned int width, char fill_char) {
     return stream.str();
 }
 
-std::unique_ptr<CompressedImageBuffer> compress_thumbnail(const ThumbnailData &data, GCodeThumbnailsFormat format)
+std::unique_ptr<CompressedImageBuffer> compress_thumbnail(const ThumbnailData &data, GCodeThumbnailsFormat format, unsigned int supersampling)
 {
     switch (format) {
     case GCodeThumbnailsFormat::PNG:
@@ -269,7 +277,7 @@ std::unique_ptr<CompressedImageBuffer> compress_thumbnail(const ThumbnailData &d
     case GCodeThumbnailsFormat::QOI:
         return compress_thumbnail_qoi(data);
     case GCodeThumbnailsFormat::BTT_TFT:
-        return compress_thumbnail_btt_tft(data);
+        return compress_thumbnail_btt_tft(data, supersampling);
     case GCodeThumbnailsFormat::ColPic:
         return compress_thumbnail_colpic(data);
     }
